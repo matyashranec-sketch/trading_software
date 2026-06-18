@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ asset.symbol }} · Prediction Tracker{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ asset.name }} <span class="muted">({{ asset.symbol }})</span></h1>
+  <a class="btn ghost" href="/">← Leaderboard</a>
+</div>
+
+<section class="cards-3">
+  {% for h in horizons %}
+  {% set s = asset_stats[h] %}
+  <div class="card {{ m.acc_class(s) }}">
+    <div class="card-label">Accuracy {{ h }}</div>
+    <div class="card-value">{{ m.accuracy(s) }}</div>
+    <div class="card-sub">{{ (s.correct if s else 0) }} 🟢 / {{ (s.incorrect if s else 0) }} 🔴 · {{ (s.pending if s else 0) }} ⚪</div>
+  </div>
+  {% endfor %}
+</section>
+
+<h2>Poslední predikce</h2>
+{% if predictions %}
+{% include "_pred_table.html" %}
+{% else %}
+<p class="muted">Pro {{ asset.symbol }} zatím nejsou žádné predikce.</p>
+{% endif %}
+{% endblock %}

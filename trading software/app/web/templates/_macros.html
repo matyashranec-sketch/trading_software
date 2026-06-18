@@ -1,0 +1,18 @@
+{% macro acc_class(stat) -%}
+{%- if stat is none or stat.accuracy is none -%}neutral{%- elif stat.accuracy >= 50 -%}good{%- else -%}bad{%- endif -%}
+{%- endmacro %}
+
+{% macro accuracy(stat) -%}
+{%- if stat and stat.accuracy is not none -%}{{ stat.accuracy }}%{%- else -%}—{%- endif -%}
+{%- endmacro %}
+
+{% macro direction_badge(direction) -%}
+{%- if direction == 'bullish' -%}<span class="badge bull">▲ Bullish</span>{%- else -%}<span class="badge bear">▼ Bearish</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro result_chip(ev) -%}
+{%- if ev.status != 'evaluated' -%}<span class="chip pending" title="čeká na vyhodnocení">{{ ev.horizon }} ⚪</span>
+{%- elif ev.is_correct is none -%}<span class="chip push" title="cena se nezměnila">{{ ev.horizon }} ⚪ push</span>
+{%- elif ev.is_correct -%}<span class="chip correct" title="trefa">{{ ev.horizon }} 🟢</span>
+{%- else -%}<span class="chip incorrect" title="miss">{{ ev.horizon }} 🔴</span>{%- endif -%}
+{%- endmacro %}

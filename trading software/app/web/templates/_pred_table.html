@@ -1,0 +1,37 @@
+{% import "_macros.html" as m %}
+<table class="tbl predictions">
+  <thead>
+    <tr>
+      <th>Čas (UTC)</th><th>Aktivum</th><th>Model</th><th>Směr</th>
+      <th>Bull%</th><th>Bear%</th><th>Cena</th><th>Výsledky</th><th>News</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for p in predictions %}
+    <tr>
+      <td class="nowrap muted">{{ p.created_at | dt }}</td>
+      <td><a href="/asset/{{ p.asset }}">{{ p.asset }}</a></td>
+      <td class="muted">{{ p.model }}</td>
+      <td>{{ m.direction_badge(p.direction) }}</td>
+      <td>{{ p.bullish_prob }}</td>
+      <td>{{ p.bearish_prob }}</td>
+      <td class="nowrap">{{ p.price_at_prediction | price }}</td>
+      <td class="chips">{% for e in p.evaluations %}{{ m.result_chip(e) }} {% endfor %}</td>
+      <td>
+        {% set news = p.news_snapshot | fromjson %}
+        {% if news %}
+        <details>
+          <summary>{{ news | length }}</summary>
+          <ul class="news">
+            {% for n in news %}<li><a href="{{ n.url }}" target="_blank" rel="noopener">{{ n.headline }}</a></li>{% endfor %}
+          </ul>
+        </details>
+        {% else %}<span class="muted">0</span>{% endif %}
+      </td>
+    </tr>
+    {% if p.rationale %}
+    <tr class="rationale-row"><td class="muted">💭</td><td colspan="8" class="rationale">{{ p.rationale }}</td></tr>
+    {% endif %}
+  {% endfor %}
+  </tbody>
+</table>
