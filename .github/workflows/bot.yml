@@ -1,0 +1,43 @@
+name: trading-bot
+
+# The bot's heartbeat. Runs every 2 hours; market-hours / fresh-news / confidence
+# gating is handled in code, so off-hours runs simply place no equity trades.
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch:        # manual "Run workflow" button
+
+# Don't let two runs overlap (orders + reconciliation must be serial).
+concurrency:
+  group: trading-bot
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Leave LIVE_TRADING unset/false for paper. Set the secret to "true" only
+      # when you intentionally switch to live trading with live keys.
+      LIVE_TRADING: ${{ secrets.LIVE_TRADING }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reconcile (positions, exits, equity, signal scoring)
+        run: python -m app.cli sync
+
+      - name: Trade (generate signals + place orders)
+        run: python -m app.cli trade
