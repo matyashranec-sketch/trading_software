@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     news_lookback_days: int = 3
 
     # --- Trading strategy / risk (the bot evaluates every ~2h via cron) ---
-    min_confidence: float = 65.0       # only trade when max(bull,bear) >= this
+    min_confidence: float = 75.0       # only trade when max(bull,bear) >= this
     require_fresh_news: bool = True     # only trade when news is recent ("po news")
     news_fresh_hours: int = 24          # how recent "fresh" means
     max_position_pct: float = 0.10      # target position size per asset (of equity)

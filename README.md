@@ -60,7 +60,7 @@ Keys (all free, no credit card):
 ## Strategy & risk (all in `app/config.py`)
 | Setting | Default | Meaning |
 |---|---|---|
-| `min_confidence` | 65 | trade only when the model is at least this sure |
+| `min_confidence` | 75 | trade only when the model is at least this sure |
 | `require_fresh_news` / `news_fresh_hours` | true / 24 | only act on recent news |
 | `max_position_pct` | 0.10 | target size per position (of equity) |
 | `max_open_positions` | 5 | concurrent position cap |
