@@ -1,0 +1,19 @@
+# --- Core ---
+SQLAlchemy>=2.0
+psycopg[binary]>=3.1        # Postgres driver (Supabase); SQLite still used for tests
+httpx>=0.27
+python-dotenv>=1.0
+pydantic-settings>=2.2
+
+# --- AI signal ---
+google-genai>=1.0
+
+# --- Broker / trading ---
+alpaca-py>=0.33
+
+# --- Optional local scheduler (GitHub Actions cron is the production heartbeat) ---
+APScheduler>=3.10
+
+# --- Tests ---
+pytest>=8.0
+respx>=0.21

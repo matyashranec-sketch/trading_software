@@ -1,0 +1,42 @@
+name: trading-bot
+
+# The bot's heartbeat. Runs every 2 hours; market-hours / fresh-news / confidence
+# gating is handled in code, so off-hours runs simply place no equity trades.
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch:        # manual "Run workflow" button
+
+# Don't let two runs overlap (orders + reconciliation must be serial).
+concurrency:
+  group: trading-bot
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
+      BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Runs on Binance Spot Testnet by default (fake funds, no KYC). To trade
+      # real money on mainnet, add a BINANCE_TESTNET=false env var here.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reconcile (positions, exits, equity, signal scoring)
+        run: python -m app.cli sync
+
+      - name: Trade (generate signals + place orders)
+        run: python -m app.cli trade
