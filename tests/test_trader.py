@@ -210,8 +210,8 @@ def test_run_trading_dry_run_places_nothing(db, monkeypatch):
 def test_run_trading_skips_when_pending_order(db, monkeypatch):
     from app.broker.base import OrderResult
 
-    _stub_signals(monkeypatch, [AAPL])
-    broker = FakeBroker(open_orders=[OrderResult(id="9", symbol="AAPL", side="buy", status="new")])
+    _stub_signals(monkeypatch, [BTC])
+    broker = FakeBroker(open_orders=[OrderResult(id="9", symbol="BTC", side="buy", status="new")])
 
     run_trading(db, broker=broker, provider=StubProvider(80, 20))
 
@@ -233,9 +233,9 @@ def test_run_trading_crypto_trades_when_market_closed(db, monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_run_sync_reconciles_open_trade(db, monkeypatch):
     monkeypatch.setattr(trader_mod, "fetch_price", lambda asset: 100.0)
-    db.add(Trade(asset="AAPL", side=SIDE_BUY, status=TRADE_SUBMITTED))
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_SUBMITTED))
     db.commit()
-    broker = FakeBroker(positions=[long_position("AAPL", 10, 95)])
+    broker = FakeBroker(positions=[long_position("BTC", 10, 95)])
 
     summary = run_sync(db, broker=broker)
 
@@ -247,14 +247,14 @@ def test_run_sync_reconciles_open_trade(db, monkeypatch):
 
 def test_run_sync_triggers_stop_loss(db, monkeypatch):
     monkeypatch.setattr(trader_mod, "fetch_price", lambda asset: 90.0)  # below stop
-    db.add(Trade(asset="AAPL", side=SIDE_BUY, status=TRADE_OPEN,
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_OPEN,
                  entry_price=100.0, qty=10.0, stop_price=92.0))
     db.commit()
-    broker = FakeBroker(positions=[long_position("AAPL", 10, 100)])
+    broker = FakeBroker(positions=[long_position("BTC", 10, 100)])
 
     summary = run_sync(db, broker=broker)
 
-    assert broker.closed == ["AAPL"]
+    assert broker.closed == ["BTC"]
     t = db.query(Trade).one()
     assert t.status == TRADE_CLOSED and t.close_reason == "stop_loss"
     assert t.pnl == -100.0

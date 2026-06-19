@@ -29,17 +29,42 @@ class PriceUnavailable(RuntimeError):
     pass
 
 
+BINANCE_BASE = "https://api.binance.com"
+
+
 def fetch_price(asset: Asset) -> float:
     settings = get_settings()
+    if asset.kind == "crypto":
+        # Binance mainnet public price (realistic, no key) -> CoinGecko fallback.
+        try:
+            return _fetch_binance_price(asset)
+        except Exception as exc:
+            logger.warning("Binance price failed for %s (%s); falling back.", asset.symbol, exc)
+        return _fetch_coingecko_price(asset)
+
+    # Stocks (kept for the optional Alpaca broker path).
     if settings.has_alpaca:
         try:
             return _fetch_alpaca_price(asset, settings)
-        except Exception as exc:  # any SDK/network issue -> fall back gracefully
+        except Exception as exc:
             logger.warning("Alpaca price failed for %s (%s); falling back.", asset.symbol, exc)
-
-    if asset.kind == "crypto":
-        return _fetch_coingecko_price(asset)
     return _fetch_finnhub_price(asset)
+
+
+def _fetch_binance_price(asset: Asset) -> float:
+    pair = asset.binance_symbol or f"{asset.symbol}USDT"
+    try:
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            resp = client.get(f"{BINANCE_BASE}/api/v3/ticker/price", params={"symbol": pair})
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as exc:
+        raise PriceUnavailable(f"Binance request failed for {asset.symbol}: {exc}") from exc
+
+    price = data.get("price")
+    if not price:
+        raise PriceUnavailable(f"No Binance price for {asset.symbol}: {data}")
+    return float(price)
 
 
 def _fetch_alpaca_price(asset: Asset, settings: Settings) -> float:

@@ -39,15 +39,15 @@ def test_overall_accuracy(db):
 
 
 def test_pending_not_counted_in_accuracy(db):
-    _add(db, "AAPL", "gem", correct=True)
-    _add(db, "AAPL", "gem", correct=None, status="pending")
+    _add(db, "BTC", "gem", correct=True)
+    _add(db, "BTC", "gem", correct=None, status="pending")
     db.commit()
 
     board = full_scoreboard(db)["boards"]["24h"]
-    aapl = next(s for s in board["by_asset"] if s.label == "AAPL")
-    assert aapl.correct == 1
-    assert aapl.pending == 1
-    assert aapl.accuracy == 100.0
+    btc = next(s for s in board["by_asset"] if s.label == "BTC")
+    assert btc.correct == 1
+    assert btc.pending == 1
+    assert btc.accuracy == 100.0
 
 
 def test_best_and_worst_model(db):

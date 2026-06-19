@@ -48,7 +48,7 @@ def test_push_when_unchanged_excluded_from_accuracy():
 
 def test_run_evaluations_only_resolves_due(db, monkeypatch):
     p = Prediction(
-        asset="TSLA", model="m", direction=BULLISH,
+        asset="BTC", model="m", direction=BULLISH,
         bullish_prob=70, bearish_prob=30, price_at_prediction=100.0,
         news_snapshot="[]", created_at=utcnow() - timedelta(days=2),
     )

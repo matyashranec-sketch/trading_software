@@ -7,6 +7,7 @@ from app.sources import news, prices
 
 STOCK = Asset("TSLA", "Tesla", "stock")
 BTC = Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin")
+BTC_TERMS = Asset("BTC", "Bitcoin", "crypto", news_terms=("bitcoin", "btc"))
 
 
 def _with_key(monkeypatch, module):
@@ -33,7 +34,18 @@ def test_finnhub_price_missing_raises(monkeypatch):
 
 
 @respx.mock
-def test_coingecko_price():
+def test_binance_price():
+    respx.get("https://api.binance.com/api/v3/ticker/price").mock(
+        return_value=httpx.Response(200, json={"symbol": "BTCUSDT", "price": "65000.00"})
+    )
+    assert prices.fetch_price(BTC) == 65000.0
+
+
+@respx.mock
+def test_crypto_price_falls_back_to_coingecko():
+    respx.get("https://api.binance.com/api/v3/ticker/price").mock(
+        return_value=httpx.Response(500)
+    )
     respx.get("https://api.coingecko.com/api/v3/simple/price").mock(
         return_value=httpx.Response(200, json={"bitcoin": {"usd": 65000}})
     )
@@ -52,6 +64,21 @@ def test_company_news_sorted_newest_first(monkeypatch):
     )
     items = news.fetch_news(STOCK)
     assert [i.headline for i in items] == ["Newer", "Older"]
+
+
+@respx.mock
+def test_crypto_news_filtered_by_terms(monkeypatch):
+    _with_key(monkeypatch, news)
+    respx.get("https://finnhub.io/api/v1/news").mock(
+        return_value=httpx.Response(200, json=[
+            {"headline": "Bitcoin hits new high", "datetime": 5, "summary": "", "source": "s", "url": "u"},
+            {"headline": "Some altcoin XYZ surges", "datetime": 6},
+            {"headline": "BTC adoption grows", "datetime": 4},
+        ])
+    )
+    heads = [i.headline for i in news.fetch_news(BTC_TERMS)]
+    assert "Some altcoin XYZ surges" not in heads
+    assert "Bitcoin hits new high" in heads and "BTC adoption grows" in heads
 
 
 def test_news_empty_without_key(monkeypatch):

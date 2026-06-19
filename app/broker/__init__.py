@@ -10,10 +10,17 @@ from app.broker.base import Account, Broker, OrderResult, Position
 
 
 def get_broker() -> Broker:
-    """Return the configured broker (Alpaca paper/live based on settings)."""
-    from app.broker.alpaca import AlpacaBroker
+    """Return the configured broker (``BROKER`` setting; Binance testnet by default)."""
+    from app.config import get_settings
 
-    return AlpacaBroker()
+    if get_settings().broker == "alpaca":
+        from app.broker.alpaca import AlpacaBroker
+
+        return AlpacaBroker()
+
+    from app.broker.binance import BinanceBroker
+
+    return BinanceBroker()
 
 
 __all__ = ["Account", "Broker", "OrderResult", "Position", "get_broker"]

@@ -24,15 +24,22 @@ class Asset:
     kind: str  # "stock" | "crypto"
     coingecko_id: str | None = None
     tradable: bool = True
+    binance_symbol: str | None = None        # trading pair on Binance, e.g. "BTCUSDT"
+    news_terms: tuple[str, ...] = ()          # keywords to filter the crypto news feed
 
 
-# --- Tracked / tradable assets ---
+# --- Tracked / tradable assets (crypto-only, traded vs USDT on Binance) ---
 ASSETS: list[Asset] = [
-    Asset("TSLA", "Tesla", "stock"),
-    Asset("AAPL", "Apple", "stock"),
-    Asset("NVDA", "NVIDIA", "stock"),
-    Asset("MSFT", "Microsoft", "stock"),
-    Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin"),
+    Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin",
+          binance_symbol="BTCUSDT", news_terms=("bitcoin", "btc")),
+    Asset("ETH", "Ethereum", "crypto", coingecko_id="ethereum",
+          binance_symbol="ETHUSDT", news_terms=("ethereum", "eth", "ether")),
+    Asset("SOL", "Solana", "crypto", coingecko_id="solana",
+          binance_symbol="SOLUSDT", news_terms=("solana", "sol")),
+    Asset("BNB", "BNB", "crypto", coingecko_id="binancecoin",
+          binance_symbol="BNBUSDT", news_terms=("bnb", "binance coin", "binance")),
+    Asset("XRP", "XRP", "crypto", coingecko_id="ripple",
+          binance_symbol="XRPUSDT", news_terms=("xrp", "ripple")),
 ]
 ASSETS_BY_SYMBOL: dict[str, Asset] = {a.symbol: a for a in ASSETS}
 
@@ -56,11 +63,21 @@ class Settings(BaseSettings):
     finnhub_api_key: str = ""          # news (+ stock price fallback)
     gemini_api_key: str = ""           # AI signal
 
-    # --- Broker (Alpaca) ---
+    # --- Broker selection ---
+    # "binance" -> Binance Spot Testnet (no KYC, free, fake funds; default).
+    # "alpaca"  -> Alpaca paper/live (kept as an optional alternative).
+    broker: str = "binance"
+
+    # --- Broker: Binance (Spot Testnet by default) ---
+    binance_api_key: str = ""
+    binance_secret_key: str = ""
+    # Default = testnet (fake funds, no KYC). Set false ONLY for real mainnet trading.
+    binance_testnet: bool = True
+
+    # --- Broker: Alpaca (optional alternative) ---
     alpaca_api_key: str = ""
     alpaca_secret_key: str = ""
-    # Master safety switch. Default = paper (virtual money). Flip to true ONLY
-    # with live keys and intent — see README.
+    # Master safety switch for Alpaca. Default = paper (virtual money).
     live_trading: bool = False
 
     # --- AI signal ---
@@ -100,6 +117,10 @@ class Settings(BaseSettings):
     @property
     def has_gemini(self) -> bool:
         return bool(self.gemini_api_key.strip())
+
+    @property
+    def has_binance(self) -> bool:
+        return bool(self.binance_api_key.strip() and self.binance_secret_key.strip())
 
     @property
     def has_alpaca(self) -> bool:

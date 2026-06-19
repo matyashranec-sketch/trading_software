@@ -1,9 +1,10 @@
 # 📈 News-Driven Trading Bot
 
-An AI reads fresh market news every ~2 hours and places **real (paper) trades**
-on [Alpaca](https://alpaca.markets) — but only when there's fresh news *and* it's
-confident. Every trade, winner or loser, stays public on a dashboard together
-with the reasoning and the headlines that drove it.
+An AI reads fresh crypto news every ~2 hours and places **real trades on the
+[Binance Spot Testnet](https://testnet.binance.vision)** (fake funds, no KYC) —
+but only when there's fresh news *and* it's confident. Every trade, winner or
+loser, stays public on a dashboard together with the reasoning and the headlines
+that drove it.
 
 > **Transparency is the point.** Nothing is ever deleted or hidden — losing
 > trades are as visible as winners. The credibility of the project depends on not
@@ -12,8 +13,8 @@ with the reasoning and the headlines that drove it.
 ## How it works
 
 ```
-GitHub Actions (every 2h)  ──►  Python bot (app/)              ──►  Alpaca (paper): orders, positions, equity
-  python -m app.cli sync          news (Finnhub) + price (Alpaca)
+GitHub Actions (every 2h)  ──►  Python bot (app/)               ──►  Binance Testnet: orders, balances
+  python -m app.cli sync          news (Finnhub) + price (Binance)
   python -m app.cli trade         Gemini signal + risk/sizing
                                           │ writes
                                           ▼
@@ -23,35 +24,36 @@ GitHub Actions (every 2h)  ──►  Python bot (app/)              ──►  
 
 Each run: fetch news → ask Gemini for a bullish/bearish call with confidence →
 **trade only if** the news is fresh (≤ `news_fresh_hours`) **and** confidence ≥
-`min_confidence`. Otherwise it holds. Stocks respect market hours; crypto (BTC)
-trades 24/7. Positions are sized as a fraction of equity, capped, and kept within
-a cash buffer.
+`min_confidence`. Otherwise it holds. Crypto trades 24/7. Positions are sized as a
+fraction of equity, capped, and kept within a cash buffer.
 
 ## Tracked assets
-TSLA · AAPL · NVDA · MSFT (stocks) · BTC (crypto). Edit `ASSETS` in `app/config.py`.
+BTC · ETH · SOL · BNB · XRP (traded vs USDT). Edit `ASSETS` in `app/config.py`.
 
 ## Quick start (local)
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # fill in the keys below (all free)
+cp .env.example .env          # fill in the keys below (all free, no KYC)
 python -m app.cli initdb      # create tables (SQLite by default)
 python -m app.cli trade --dry-run   # see what it WOULD do, places nothing
-python -m app.cli trade       # place paper trades
+python -m app.cli trade       # place testnet trades
 pytest                        # run the test suite
 ```
 
-Keys (all free, no credit card):
+Keys (all free, no credit card, no identity verification):
 - `GEMINI_API_KEY` — https://aistudio.google.com/app/apikey
 - `FINNHUB_API_KEY` — https://finnhub.io
-- `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` — https://alpaca.markets (Paper Trading → API Keys)
+- `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` — https://testnet.binance.vision
+  (log in with GitHub → *Generate HMAC_SHA256 Key*)
 
 ## Deploy (free stack)
-1. **Alpaca** — create a free account, grab **paper** API keys.
+1. **Binance Testnet** — log in at testnet.binance.vision, generate API keys
+   (fake balances are pre-funded; no KYC).
 2. **Supabase** — create a project, open the SQL editor and run
    [`supabase/schema.sql`](supabase/schema.sql) (creates tables + read-only RLS).
-   Copy the Postgres connection string and the public anon key.
+   Copy the **Session pooler** Postgres connection string and the public anon key.
 3. **GitHub Actions** — add repo secrets `GEMINI_API_KEY`, `FINNHUB_API_KEY`,
-   `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `DATABASE_URL` (the Supabase connection
+   `BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, `DATABASE_URL` (the Supabase pooler
    string). The workflow in [`.github/workflows/bot.yml`](.github/workflows/bot.yml)
    runs `sync` + `trade` every 2 hours (and on demand via *Run workflow*).
 4. **Vercel** — import the repo, set **Root Directory** to `web`, add env vars
@@ -65,24 +67,24 @@ Keys (all free, no credit card):
 | `max_position_pct` | 0.10 | target size per position (of equity) |
 | `max_open_positions` | 5 | concurrent position cap |
 | `cash_buffer_pct` | 0.10 | never deploy this fraction of cash |
-| `allow_short` | false | bearish closes longs; shorting off by default |
 | `stop_loss_pct` / `take_profit_pct` | 0 / 0 | optional hard exits (0 = off) |
 
-Override any of them via environment variables (e.g. `MIN_CONFIDENCE=70`).
+Override any of them via environment variables (e.g. `MIN_CONFIDENCE=80`).
 
-## Safety: paper → live
-The bot trades **paper money by default** (`LIVE_TRADING=false`). Going live is a
-deliberate switch: set `LIVE_TRADING=true` **and** use live Alpaca keys. Until
-then there is no real money at risk.
+## Safety: testnet → real money
+The bot trades on the **Binance Spot Testnet by default** (`BINANCE_TESTNET=true`)
+— fake funds, zero real risk. Trading real money is a deliberate switch: set
+`BINANCE_TESTNET=false` and use mainnet keys. (An Alpaca stock broker is also
+included as an alternative — set `BROKER=alpaca`.)
 
 ## Project layout
 ```
 app/
   config.py      # assets, models, trading risk, settings
   models.py      # DB models: Prediction/Evaluation (signals) + Trade/EquitySnapshot
-  sources/       # Alpaca prices (+ Finnhub/CoinGecko fallback), Finnhub news
+  sources/       # Binance/CoinGecko prices, Finnhub news (coin-filtered)
   llm/           # pluggable AI provider (Gemini)
-  broker/        # Alpaca trading wrapper behind a Broker interface
+  broker/        # Binance (testnet) + Alpaca, behind a common Broker interface
   engine/        # predictor (signals), trader (orders), evaluator, scoreboard
   cli.py         # `trade`, `sync`, `predict`, `initdb`, `run`
   scheduler.py   # optional local loop (production uses GitHub Actions)

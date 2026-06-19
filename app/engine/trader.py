@@ -187,7 +187,8 @@ def run_trading(session: Session, broker: Broker | None = None, provider=None,
                 open_count += 1
             elif decision.action == ACTION_CLOSE:
                 order = broker.close_position(symbol)
-                _close_trade(session, symbol, sig.price, CLOSE_SIGNAL, holding)
+                exit_price = order.filled_avg_price or sig.price
+                _close_trade(session, symbol, exit_price, CLOSE_SIGNAL, holding)
                 open_count = max(0, open_count - 1)
             if order is not None:
                 entry["order_id"] = order.id

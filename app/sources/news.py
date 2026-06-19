@@ -41,11 +41,24 @@ def fetch_news(asset: Asset, limit: int | None = None) -> list[NewsItem]:
     limit = limit or settings.news_limit
     if asset.kind == "crypto":
         items = _fetch_crypto_news(settings)
+        # Finnhub's crypto feed is one general stream — narrow it to this coin.
+        # Fall back to the general feed if nothing matches (still useful context).
+        items = _filter_by_terms(items, asset.news_terms) or items
     else:
         items = _fetch_company_news(asset.symbol, settings)
 
     items.sort(key=lambda n: n.datetime, reverse=True)
     return items[:limit]
+
+
+def _filter_by_terms(items: list[NewsItem], terms: tuple[str, ...]) -> list[NewsItem]:
+    if not terms:
+        return items
+    lowered = [t.lower() for t in terms]
+    return [
+        n for n in items
+        if any(t in f"{n.headline} {n.summary}".lower() for t in lowered)
+    ]
 
 
 def _fetch_company_news(symbol: str, settings: Settings) -> list[NewsItem]:
