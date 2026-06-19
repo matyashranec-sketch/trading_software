@@ -1,0 +1,17 @@
+# Fly.io app for the trading bot. Runs in Frankfurt (EU) so Binance is reachable.
+# Deployed automatically by .github/workflows/fly-deploy.yml (no local CLI needed).
+# App name must be globally unique — change it if Fly says it's taken.
+app = "matyashranec-trading-bot"
+primary_region = "fra"
+
+[build]
+
+[processes]
+  # Worker process: the blocking scheduler loop (sync + trade every ~2h).
+  bot = "python -m app.cli run"
+
+# Single small always-on machine; no public HTTP service (this is a worker).
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  processes = ["bot"]

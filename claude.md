@@ -14,14 +14,18 @@ dashboardu — i ztrátové.
 
 ## Architektura
 ```
-GitHub Actions (cron, každé 2h)  ─►  Python bot (app/)        ─►  Binance Spot Testnet
-   app.cli sync  + app.cli trade        news + cena + Gemini + risk
+Fly.io · Frankfurt (každé ~2h)  ─►  Python bot (app/)        ─►  Binance Spot Testnet
+   app.cli run (sync + trade)        news + cena + Gemini + risk
                                               │ zapisuje
                                               ▼
                                         Supabase (Postgres)  ◄─ čte ─ React dashboard (Vercel)
 ```
-- **Bot:** Python, bez webového serveru. Spouští se přes `app/cli.py`.
-- **Heartbeat:** GitHub Actions cron (`.github/workflows/bot.yml`), každé 2 h.
+- **Bot:** Python, bez webového serveru. Spouští se přes `app/cli.py` (`run` = blokující
+  scheduler, cyklus sync+trade každé `run_interval_hours`).
+- **Heartbeat:** běží na **Fly.io ve Frankfurtu** (`Dockerfile` + `fly.toml`), protože
+  Binance blokuje US IP GitHub Actions (HTTP 451). GitHub Actions
+  (`.github/workflows/fly-deploy.yml`) jen **builduje a deployuje** na Fly; secrets se
+  pushnou na Fly z GitHub secrets (`FLY_API_TOKEN`). `bot.yml` zůstává jen pro ruční běh.
 - **DB:** Supabase Postgres (lokálně SQLite). SQLAlchemy, driver `psycopg`.
 - **Frontend:** React + Vite (`web/`) na Vercelu, čte Supabase přímo přes
   `@supabase/supabase-js` (anon klíč, RLS jen pro čtení).

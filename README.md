@@ -13,13 +13,15 @@ that drove it.
 ## How it works
 
 ```
-GitHub Actions (every 2h)  ──►  Python bot (app/)               ──►  Binance Testnet: orders, balances
-  python -m app.cli sync          news (Finnhub) + price (Binance)
-  python -m app.cli trade         Gemini signal + risk/sizing
-                                          │ writes
-                                          ▼
-                                   Supabase (Postgres)   ◄── reads ──  React dashboard (Vercel)
-                                   trades / signals / equity            @supabase/supabase-js (anon, read-only)
+Fly.io · Frankfurt (every ~2h)  ──►  Python bot (app/)            ──►  Binance Testnet: orders, balances
+  app.cli run  (sync + trade)         news (Finnhub) + price (Binance)
+                                       Gemini signal + risk/sizing
+                                              │ writes
+                                              ▼
+                                       Supabase (Postgres)  ◄── reads ──  React dashboard (Vercel)
+                                       trades / signals / equity          @supabase/supabase-js (anon, read-only)
+
+GitHub Actions only builds & deploys the bot to Fly (Binance blocks GitHub's US IPs → HTTP 451).
 ```
 
 Each run: fetch news → ask Gemini for a bullish/bearish call with confidence →
@@ -52,11 +54,17 @@ Keys (all free, no credit card, no identity verification):
 2. **Supabase** — create a project, open the SQL editor and run
    [`supabase/schema.sql`](supabase/schema.sql) (creates tables + read-only RLS).
    Copy the **Session pooler** Postgres connection string and the public anon key.
-3. **GitHub Actions** — add repo secrets `GEMINI_API_KEY`, `FINNHUB_API_KEY`,
-   `BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, `DATABASE_URL` (the Supabase pooler
-   string). The workflow in [`.github/workflows/bot.yml`](.github/workflows/bot.yml)
-   runs `sync` + `trade` every 2 hours (and on demand via *Run workflow*).
-4. **Vercel** — import the repo, set **Root Directory** to `web`, add env vars
+3. **GitHub secrets** — add `GEMINI_API_KEY`, `FINNHUB_API_KEY`,
+   `BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, `DATABASE_URL` (Supabase pooler string),
+   plus `FLY_API_TOKEN` (next step). The deploy workflow pushes these to Fly.
+4. **Fly.io** (runs the bot in the EU, where Binance is reachable) — create a free
+   account, then a deploy token (*Tokens → Create deploy token*) and add it as the
+   GitHub secret `FLY_API_TOKEN`. The workflow
+   [`.github/workflows/fly-deploy.yml`](.github/workflows/fly-deploy.yml) creates the
+   app (`fra` / Frankfurt), pushes the secrets, and deploys on every push to `main`
+   (and via *Run workflow*). The bot then runs `sync + trade` every ~2h on Fly.
+   App name lives in [`fly.toml`](fly.toml) — change it if Fly says it's taken.
+5. **Vercel** — import the repo, set **Root Directory** to `web`, add env vars
    `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, deploy. See [`web/README.md`](web/README.md).
 
 ## Strategy & risk (all in `app/config.py`)
