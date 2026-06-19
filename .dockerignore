@@ -1,0 +1,16 @@
+# Keep the bot image small — only app/ + requirements are needed.
+web/
+node_modules/
+.git/
+.github/
+data/
+tests/
+supabase/
+**/__pycache__/
+*.pyc
+.env
+*.env
+.venv/
+venv/
+*.md
+seed_demo.py

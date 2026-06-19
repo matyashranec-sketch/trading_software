@@ -1,11 +1,11 @@
 name: trading-bot
 
-# The bot's heartbeat. Runs every 2 hours; market-hours / fresh-news / confidence
-# gating is handled in code, so off-hours runs simply place no equity trades.
+# NOTE: The live bot runs on Fly.io (Frankfurt) — see .github/workflows/fly-deploy.yml —
+# because Binance blocks GitHub's US IPs (HTTP 451). This workflow is kept only for
+# MANUAL one-off runs/debugging (workflow_dispatch). It will fail on Binance calls
+# from GitHub's US runners; that's expected. No automatic schedule.
 on:
-  schedule:
-    - cron: "0 */2 * * *"
-  workflow_dispatch:        # manual "Run workflow" button
+  workflow_dispatch:        # manual "Run workflow" button only
 
 # Don't let two runs overlap (orders + reconciliation must be serial).
 concurrency:
