@@ -28,7 +28,10 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Create the Fly app if it doesn't exist yet
-        run: flyctl apps create "$(grep -E '^app' fly.toml | head -1 | cut -d'"' -f2)" || true
+        # --org is explicit so an org-scoped deploy token works (it can't enumerate orgs).
+        run: flyctl apps create "$(grep -E '^app' fly.toml | head -1 | cut -d'"' -f2)" --org "$FLY_ORG" || true
+        env:
+          FLY_ORG: matyashranec-gmail-com
 
       - name: Push the bot's secrets to Fly (staged, applied on deploy)
         run: |
