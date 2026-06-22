@@ -179,6 +179,51 @@ class BinanceBroker(Broker):
         data = self._request("GET", "/api/v3/openOrders", signed=True)
         return [self._adapt_order(o) for o in data]
 
+    def liquidate_all(self, dry_run: bool = False) -> dict:
+        """Market-sell every non-USDT balance into USDT.
+
+        Skips assets this endpoint doesn't list against USDT and dust below the
+        pair's minimum notional. Safe to re-run — it sells whatever is left.
+        """
+        sold: list[dict] = []
+        skipped: list[dict] = []
+        for asset, qty in self._balances().items():
+            if asset == QUOTE or qty <= 0:
+                continue
+            pair = f"{asset}{QUOTE}"
+            filters = self._symbol_filters(pair)
+            if filters is None:
+                skipped.append({"asset": asset, "qty": qty, "reason": "no USDT pair here"})
+                continue
+            try:
+                price = self._ticker_price(pair)
+            except Exception:
+                skipped.append({"asset": asset, "qty": qty, "reason": "no price"})
+                continue
+            qty_str = _round_step(qty, filters["step"])
+            sell_qty = float(qty_str)
+            value = sell_qty * price
+            if sell_qty <= 0 or value < max(filters["min_notional"], _DUST_USD):
+                skipped.append({"asset": asset, "qty": qty, "reason": f"dust (~${value:.2f})"})
+                continue
+            if dry_run:
+                sold.append({"asset": asset, "qty": sell_qty, "approx_usd": round(value, 2)})
+                continue
+            try:
+                params = {"symbol": pair, "side": "SELL", "type": "MARKET", "quantity": qty_str}
+                res = self._adapt_order(self._request("POST", "/api/v3/order", params, signed=True))
+                sold.append({"asset": asset, "qty": res.qty, "usd": round(res.notional or value, 2)})
+                logger.info("Liquidated %s: %s (~$%.2f)", asset, qty_str, value)
+            except Exception as exc:
+                skipped.append({"asset": asset, "qty": qty, "reason": str(exc)[:140]})
+        return {
+            "dry_run": dry_run,
+            "sold_count": len(sold),
+            "skipped_count": len(skipped),
+            "sold": sold,
+            "skipped": skipped,
+        }
+
     # --- helpers ---
     def _balances(self) -> dict[str, float]:
         data = self._request("GET", "/api/v3/account", signed=True)

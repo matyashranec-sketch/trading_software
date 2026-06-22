@@ -61,6 +61,17 @@ def cmd_run(_args: argparse.Namespace) -> None:
     run_forever()
 
 
+def cmd_liquidate(args: argparse.Namespace) -> None:
+    from app.broker import get_broker
+
+    broker = get_broker()
+    liquidate = getattr(broker, "liquidate_all", None)
+    if liquidate is None:
+        print("liquidate is only supported by the Binance broker.")
+        return
+    _print(liquidate(dry_run=args.dry_run))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli", description="News-driven trading bot")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -74,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("sync", help="reconcile positions, apply exits, record equity, score signals")
     sub.add_parser("predict", help="refresh the multi-model accuracy leaderboard")
     sub.add_parser("run", help="blocking local scheduler (every run_interval_hours)")
+    p_liq = sub.add_parser("liquidate", help="market-sell all non-USDT balances into USDT")
+    p_liq.add_argument(
+        "--dry-run", action="store_true",
+        help="show what would be sold, but place no orders",
+    )
     return parser
 
 
@@ -83,6 +99,7 @@ _COMMANDS = {
     "sync": cmd_sync,
     "predict": cmd_predict,
     "run": cmd_run,
+    "liquidate": cmd_liquidate,
 }
 
 
