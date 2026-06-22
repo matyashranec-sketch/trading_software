@@ -79,6 +79,11 @@ Keys (all free, no credit card, no identity verification):
 
 Override any of them via environment variables (e.g. `MIN_CONFIDENCE=80`).
 
+On the **free Gemini tier** the bot retries transient `429` (rate limit) and
+`503` (overloaded) errors with exponential backoff, spaces calls out, and caches
+the model list, so a burst of per-asset requests stays reliable on a single key
+(`gemini_max_retries`, `llm_min_interval_seconds`, … in `app/config.py`).
+
 ## Safety: testnet → real money
 The bot trades on the **Binance Spot Testnet by default** (`BINANCE_TESTNET=true`)
 — fake funds, zero real risk. Trading real money is a deliberate switch: set
