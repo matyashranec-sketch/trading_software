@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     gemini_models: list[str] = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     trading_model: str = ""            # "" -> use first available model
 
+    # --- AI rate-limit handling (Gemini free tier) ---
+    # The free tier rate-limits per-minute (429) and the model is sometimes
+    # overloaded (503). We retry transient errors with exponential backoff and
+    # space calls out so a burst of per-asset requests stays under the limit.
+    gemini_max_retries: int = 5             # retry 429/5xx this many times before giving up
+    gemini_retry_base_delay: float = 2.0    # backoff: ~2, 4, 8, 16, 32 s (+ jitter)
+    gemini_retry_max_delay: float = 32.0    # cap a single backoff wait at this
+    llm_min_interval_seconds: float = 6.0   # min spacing between model calls (RPM guard)
+    gemini_models_cache_ttl: int = 21_600   # cache models.list() for 6 h (long-running run)
+
     # --- Storage ---
     # Local default = SQLite. In production set DATABASE_URL to the Supabase
     # Postgres connection string (postgresql://...).

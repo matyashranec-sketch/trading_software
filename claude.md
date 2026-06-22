@@ -29,7 +29,9 @@ Fly.io · Frankfurt (každé ~2h)  ─►  Python bot (app/)        ─►  Bina
 - **DB:** Supabase Postgres (lokálně SQLite). SQLAlchemy, driver `psycopg`.
 - **Frontend:** React + Vite (`web/`) na Vercelu, čte Supabase přímo přes
   `@supabase/supabase-js` (anon klíč, RLS jen pro čtení).
-- **AI:** Google Gemini (free), provider je pluggable (`app/llm/base.py`).
+- **AI:** Google Gemini (free), provider je pluggable (`app/llm/base.py`). Free tier
+  rate-limituje (429) a model bývá přetížený (503) → `GeminiProvider` má retry s
+  exponenciálním backoffem, throttling mezi voláními a cache model-listu (`app/llm/gemini.py`).
 - **Broker:** Binance Spot Testnet (REST, podepsané HMAC) v `app/broker/binance.py`,
   schované za rozhraním `Broker` (`app/broker/base.py`) → engine ani testy nezávisí
   na konkrétní burze. Alpaca zůstává jako alternativa (`BROKER=alpaca`). Výběr v
