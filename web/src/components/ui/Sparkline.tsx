@@ -3,7 +3,7 @@ import { Area, AreaChart, ResponsiveContainer } from "recharts";
 
 export default function Sparkline({
   data,
-  color = "#7c5cff",
+  color = "#8fa97c",
 }: {
   data: number[];
   color?: string;
@@ -13,11 +13,11 @@ export default function Sparkline({
   const chartData = data.map((v, i) => ({ i, v }));
 
   return (
-    <ResponsiveContainer width="100%" height={40}>
+    <ResponsiveContainer width="100%" height={36}>
       <AreaChart data={chartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
         <defs>
           <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.5} />
+            <stop offset="0%" stopColor={color} stopOpacity={0.22} />
             <stop offset="100%" stopColor={color} stopOpacity={0} />
           </linearGradient>
         </defs>
@@ -25,10 +25,10 @@ export default function Sparkline({
           type="monotone"
           dataKey="v"
           stroke={color}
-          strokeWidth={2}
+          strokeWidth={1.5}
           fill={`url(#${gid})`}
           dot={false}
-          isAnimationActive
+          isAnimationActive={false}
         />
       </AreaChart>
     </ResponsiveContainer>

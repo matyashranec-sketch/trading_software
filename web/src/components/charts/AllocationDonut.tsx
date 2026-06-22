@@ -2,7 +2,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { money } from "../../lib/format";
 import type { Trade } from "../../types";
 
-const PALETTE = ["#7c5cff", "#00e0b8", "#f7931a", "#8a92ff", "#ff5c7a", "#ffcf5c", "#14f195"];
+const PALETTE = ["#8fa97c", "#c9a36b", "#7c93a6", "#c77f66", "#6fa096"];
 
 export default function AllocationDonut({ open }: { open: Trade[] }) {
   const map = new Map<string, number>();
@@ -14,7 +14,7 @@ export default function AllocationDonut({ open }: { open: Trade[] }) {
   const total = data.reduce((s, d) => s + d.value, 0);
 
   return (
-    <div className="glass panel">
+    <div className="card panel">
       <div className="panel-head"><h2>Portfolio allocation</h2></div>
       {data.length ? (
         <>
@@ -65,10 +65,7 @@ export default function AllocationDonut({ open }: { open: Trade[] }) {
           </div>
         </>
       ) : (
-        <div className="chart-empty">
-          <div className="big">🧊</div>
-          <div>No open positions yet.</div>
-        </div>
+        <div className="chart-empty">No open positions yet.</div>
       )}
     </div>
   );

@@ -1,8 +1,8 @@
-import GlassCard from "./ui/GlassCard";
+import Card from "./ui/Card";
 
 export default function Setup() {
   return (
-    <GlassCard className="panel setup">
+    <Card className="panel setup">
       <h2 style={{ marginTop: 0 }}>Almost there — connect Supabase</h2>
       <p className="empty-note">
         This dashboard reads the bot's public data straight from Supabase. Set two
@@ -18,6 +18,6 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key`}</code>
         the anon key read-only. Find them in Supabase under{" "}
         <strong>Project Settings → API</strong>.
       </p>
-    </GlassCard>
+    </Card>
   );
 }
