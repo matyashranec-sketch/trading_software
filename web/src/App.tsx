@@ -1,9 +1,12 @@
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useState } from "react";
 import { fetchEquity, fetchPredictions, fetchTrades } from "./api";
 import Dashboard from "./components/Dashboard";
 import Leaderboard from "./components/Leaderboard";
 import Setup from "./components/Setup";
 import TradesTable from "./components/TradesTable";
+import GlassCard from "./components/ui/GlassCard";
+import LoadingSkeleton from "./components/ui/Skeleton";
 import { dateTime } from "./lib/format";
 import { isConfigured } from "./supabase";
 import type { EquitySnapshot, Prediction, Trade } from "./types";
@@ -15,27 +18,38 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "signals", label: "Signals" },
 ];
 
-function Header({ updated, onRefresh }: { updated?: Date | null; onRefresh?: () => void }) {
+function Header({
+  updated,
+  onRefresh,
+  refreshing,
+}: {
+  updated?: Date | null;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+}) {
   return (
-    <header className="header">
+    <GlassCard className="header">
       <div className="brand">
-        <h1>News-Driven Trading Bot</h1>
+        <h1><span className="gradient-text">News-Driven</span> Trading Bot</h1>
         <span className="tag">
-          An AI reads fresh news every ~2 hours and trades only when it is
-          confident. Every trade — winners and losers — stays public, with the
-          reasoning and news that drove it.
+          An AI reads fresh news every ~2 hours and trades only when it is confident.
+          Every trade — winners and losers — stays public, with the reasoning and news
+          that drove it.
         </span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-        <span className="badge">● Paper trading</span>
+      <div className="header-right">
+        <span className="badge"><span className="dot" /> Paper trading</span>
         {onRefresh && (
           <div className="toolbar">
             {updated && <span>Updated {dateTime(updated.toISOString())}</span>}
-            <button className="btn" onClick={onRefresh}>Refresh</button>
+            <button className="btn" onClick={onRefresh} disabled={refreshing}>
+              <span className={refreshing ? "spin" : ""} style={{ display: "inline-block" }}>↻</span>
+              Refresh
+            </button>
           </div>
         )}
       </div>
-    </header>
+    </GlassCard>
   );
 }
 
@@ -45,12 +59,14 @@ export default function App() {
   const [equity, setEquity] = useState<EquitySnapshot[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
     try {
       setError(null);
+      setRefreshing(true);
       const [t, e, p] = await Promise.all([fetchTrades(), fetchEquity(), fetchPredictions()]);
       setTrades(t);
       setEquity(e);
@@ -60,6 +76,7 @@ export default function App() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -77,22 +94,32 @@ export default function App() {
     return (
       <div className="app">
         <Header />
-        <Setup />
+        <div style={{ marginTop: 18 }}>
+          <Setup />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="app">
-      <Header updated={updated} onRefresh={load} />
-      <nav className="tabs">
+      <Header updated={updated} onRefresh={load} refreshing={refreshing} />
+
+      <nav className="tabs glass">
         {TABS.map((t) => (
           <button
             key={t.id}
             className={`tab ${tab === t.id ? "active" : ""}`}
             onClick={() => setTab(t.id)}
           >
-            {t.label}
+            {tab === t.id && (
+              <motion.span
+                layoutId="tab-ind"
+                className="tab-indicator"
+                transition={{ type: "spring", stiffness: 380, damping: 32 }}
+              />
+            )}
+            <span style={{ position: "relative", zIndex: 1 }}>{t.label}</span>
           </button>
         ))}
       </nav>
@@ -100,13 +127,25 @@ export default function App() {
       {error && <div className="error">Couldn’t load data: {error}</div>}
 
       {loading ? (
-        <div className="loading">Loading…</div>
-      ) : tab === "dashboard" ? (
-        <Dashboard equity={equity} trades={trades} />
-      ) : tab === "trades" ? (
-        <TradesTable trades={trades} />
+        <LoadingSkeleton />
       ) : (
-        <Leaderboard predictions={predictions} />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+            {tab === "dashboard" ? (
+              <Dashboard equity={equity} trades={trades} />
+            ) : tab === "trades" ? (
+              <TradesTable trades={trades} />
+            ) : (
+              <Leaderboard predictions={predictions} />
+            )}
+          </motion.div>
+        </AnimatePresence>
       )}
     </div>
   );

@@ -8,6 +8,16 @@ export function money(value: number | null | undefined, digits = 2): string {
   });
 }
 
+export function compactMoney(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "—";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(abs >= 1e4 ? 0 : 1)}k`;
+  return `${sign}$${abs.toFixed(2)}`;
+}
+
 export function num(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined) return "—";
   return value.toLocaleString("en-US", {
