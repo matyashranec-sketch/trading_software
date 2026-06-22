@@ -1,19 +1,17 @@
+// Muted, flat brand tints — recognizable without shouting.
 const COLORS: Record<string, string> = {
-  BTC: "#f7931a",
-  ETH: "#8a92ff",
-  SOL: "#14f195",
-  BNB: "#f3ba2f",
-  XRP: "#cfd3dc",
+  BTC: "#d9912f",
+  ETH: "#8a92c4",
+  SOL: "#5fae8e",
+  BNB: "#cda84a",
+  XRP: "#aab0bb",
 };
 
 export default function AssetBadge({ symbol }: { symbol: string }) {
-  const color = COLORS[symbol] ?? "#7c5cff";
+  const color = COLORS[symbol] ?? "#8fa97c";
   return (
     <span className="asset">
-      <span
-        className="glyph"
-        style={{ background: `linear-gradient(135deg, ${color}, ${color}aa)` }}
-      >
+      <span className="glyph" style={{ background: color }}>
         {symbol.slice(0, 1)}
       </span>
       {symbol}

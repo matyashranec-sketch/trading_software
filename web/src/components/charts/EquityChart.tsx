@@ -29,7 +29,7 @@ function Tip({ active, payload }: any) {
   return (
     <div className="chart-tip">
       <div className="t-label">{dateTime(p.ts)}</div>
-      <div className="t-val gradient-text">{money(p.equity)}</div>
+      <div className="t-val mono">{money(p.equity)}</div>
     </div>
   );
 }
@@ -50,7 +50,7 @@ export default function EquityChart({ equity }: { equity: EquitySnapshot[] }) {
   }, [equity, range]);
 
   return (
-    <div className="glass panel">
+    <div className="card panel">
       <div className="panel-head">
         <h2>Equity curve</h2>
         <div className="filters">
@@ -70,27 +70,22 @@ export default function EquityChart({ equity }: { equity: EquitySnapshot[] }) {
           <AreaChart data={chartData} margin={{ top: 10, right: 8, left: 4, bottom: 0 }}>
             <defs>
               <linearGradient id="eq-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#7c5cff" stopOpacity={0.45} />
-                <stop offset="55%" stopColor="#00e0b8" stopOpacity={0.12} />
-                <stop offset="100%" stopColor="#00e0b8" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="eq-stroke" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#7c5cff" />
-                <stop offset="100%" stopColor="#00e0b8" />
+                <stop offset="0%" stopColor="#8fa97c" stopOpacity={0.18} />
+                <stop offset="100%" stopColor="#8fa97c" stopOpacity={0} />
               </linearGradient>
             </defs>
-            <CartesianGrid stroke="rgba(124,92,255,0.1)" vertical={false} />
+            <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
             <XAxis
               dataKey="ts"
               tickFormatter={(v) => dateTime(String(v))}
-              stroke="#5e5d78"
+              stroke="#6a6a73"
               fontSize={11}
               minTickGap={56}
               tickLine={false}
               axisLine={false}
             />
             <YAxis
-              stroke="#5e5d78"
+              stroke="#6a6a73"
               fontSize={11}
               width={56}
               domain={["auto", "auto"]}
@@ -98,17 +93,16 @@ export default function EquityChart({ equity }: { equity: EquitySnapshot[] }) {
               tickLine={false}
               axisLine={false}
             />
-            <Tooltip content={<Tip />} cursor={{ stroke: "rgba(124,92,255,0.4)", strokeWidth: 1 }} />
+            <Tooltip content={<Tip />} cursor={{ stroke: "rgba(255,255,255,0.2)", strokeWidth: 1 }} />
             <Area
               type="monotone"
               dataKey="equity"
-              stroke="url(#eq-stroke)"
-              strokeWidth={2.5}
+              stroke="#8fa97c"
+              strokeWidth={1.75}
               fill="url(#eq-fill)"
               dot={false}
-              activeDot={{ r: 4, fill: "#00e0b8", stroke: "#07070d", strokeWidth: 2 }}
-              isAnimationActive
-              animationDuration={900}
+              activeDot={{ r: 3, fill: "#a5be90", stroke: "#131316", strokeWidth: 2 }}
+              isAnimationActive={false}
             />
           </AreaChart>
         </ResponsiveContainer>

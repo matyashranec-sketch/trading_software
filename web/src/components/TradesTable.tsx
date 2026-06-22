@@ -1,9 +1,8 @@
-import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { dateTime, money, pct, signClass } from "../lib/format";
 import type { NewsItem, Trade } from "../types";
 import AssetBadge from "./ui/AssetBadge";
-import GlassCard from "./ui/GlassCard";
+import Card from "./ui/Card";
 import Pill from "./ui/Pill";
 
 function parseNews(json?: string | null): NewsItem[] {
@@ -30,7 +29,7 @@ export default function TradesTable({ trades }: { trades: Trade[] }) {
   });
 
   return (
-    <GlassCard className="panel">
+    <Card className="panel">
       <div className="panel-head">
         <h2>All trades — nothing hidden</h2>
         <div className="filters">
@@ -71,49 +70,39 @@ export default function TradesTable({ trades }: { trades: Trade[] }) {
                     <span className={`num mono ${signClass(t.pnl)}`}>{t.pnl != null ? money(t.pnl) : "—"}</span>
                     <span className={`num mono ${signClass(t.pnl_pct)}`}>{t.pnl_pct != null ? pct(t.pnl_pct) : "—"}</span>
                   </div>
-                  <AnimatePresence initial={false}>
-                    {expanded && (
-                      <motion.div
-                        className="expand-wrap"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.28, ease: "easeOut" }}
-                      >
-                        <div className="expand-inner">
-                          <div className="rationale">
-                            <strong>Why{t.model ? ` (${t.model})` : ""}:</strong> {t.rationale || "—"}
-                          </div>
-                          {t.close_reason && (
-                            <div className="muted" style={{ marginTop: 6 }}>Closed via: {t.close_reason}</div>
-                          )}
-                          {news.length > 0 && (
-                            <>
-                              <div className="muted" style={{ marginTop: 10 }}>News the signal was based on:</div>
-                              <ul className="news-list">
-                                {news.slice(0, 8).map((n, i) => (
-                                  <li key={i}>
-                                    {n.url ? (
-                                      <a href={n.url} target="_blank" rel="noreferrer">{n.headline}</a>
-                                    ) : (
-                                      n.headline
-                                    )}
-                                    {n.source ? ` — ${n.source}` : ""}
-                                  </li>
-                                ))}
-                              </ul>
-                            </>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  {expanded && (
+                    <div className="expand-inner">
+                      <div className="rationale">
+                        <strong>Why{t.model ? ` (${t.model})` : ""}:</strong> {t.rationale || "—"}
+                      </div>
+                      {t.close_reason && (
+                        <div className="muted" style={{ marginTop: 6 }}>Closed via: {t.close_reason}</div>
+                      )}
+                      {news.length > 0 && (
+                        <>
+                          <div className="muted" style={{ marginTop: 10 }}>News the signal was based on:</div>
+                          <ul className="news-list">
+                            {news.slice(0, 8).map((n, i) => (
+                              <li key={i}>
+                                {n.url ? (
+                                  <a href={n.url} target="_blank" rel="noreferrer">{n.headline}</a>
+                                ) : (
+                                  n.headline
+                                )}
+                                {n.source ? ` — ${n.source}` : ""}
+                              </li>
+                            ))}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
       )}
-    </GlassCard>
+    </Card>
   );
 }

@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import type { Prediction } from "../../types";
 
 const HORIZONS = ["24h", "7d"];
@@ -33,8 +32,7 @@ export default function AccuracyBars({ predictions }: { predictions: Prediction[
   if (!rows.length || !anyDecided) {
     return (
       <div className="chart-empty" style={{ height: 150 }}>
-        <div className="big">🎯</div>
-        <div>Accuracy appears once signals are scored (after 24h / 7d).</div>
+        Accuracy appears once signals are scored (after 24h / 7d).
       </div>
     );
   }
@@ -48,17 +46,14 @@ export default function AccuracyBars({ predictions }: { predictions: Prediction[
             const t = r[h] ?? { correct: 0, incorrect: 0 };
             const decided = t.correct + t.incorrect;
             const acc = decided ? (t.correct / decided) * 100 : null;
-            const color = acc != null && acc >= 50 ? "#2ee6a8" : "#ff5c7a";
+            const color = acc != null && acc >= 50 ? "var(--pos)" : "var(--neg)";
             return (
               <div key={h} style={{ display: "flex", alignItems: "center", gap: 10, margin: "7px 0" }}>
                 <span className="muted" style={{ width: 28, fontSize: 12 }}>{h}</span>
-                <div style={{ flex: 1, height: 8, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                <div style={{ flex: 1, height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
                   {acc != null && (
-                    <motion.div
-                      initial={{ width: 0 }}
-                      animate={{ width: `${acc}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
-                      style={{ height: "100%", background: color, boxShadow: `0 0 12px -2px ${color}`, borderRadius: 999 }}
+                    <div
+                      style={{ width: `${acc}%`, height: "100%", background: color, borderRadius: 999, transition: "width .3s ease" }}
                     />
                   )}
                 </div>

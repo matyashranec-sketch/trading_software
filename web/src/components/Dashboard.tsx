@@ -4,7 +4,7 @@ import AllocationDonut from "./charts/AllocationDonut";
 import AssetPnL from "./charts/AssetPnL";
 import EquityChart from "./charts/EquityChart";
 import AssetBadge from "./ui/AssetBadge";
-import GlassCard from "./ui/GlassCard";
+import Card from "./ui/Card";
 import Pill from "./ui/Pill";
 import StatCard from "./ui/StatCard";
 
@@ -30,15 +30,13 @@ export default function Dashboard({ equity, trades }: { equity: EquitySnapshot[]
           sub={totalReturn !== null ? `${pct(totalReturn)} since start` : "live"}
           valueClass={totalReturn !== null ? signClass(totalReturn) : undefined}
           spark={equitySpark}
-          sparkColor="#7c5cff"
-          delay={0}
+          sparkColor="#8fa97c"
         />
         <StatCard
           label="Cash"
           value={latest ? latest.cash : null}
           format={compactMoney}
           sub="available USDT"
-          delay={0.06}
         />
         <StatCard
           label="Realized P&L"
@@ -46,14 +44,12 @@ export default function Dashboard({ equity, trades }: { equity: EquitySnapshot[]
           format={money}
           valueClass={signClass(realized)}
           sub={winRate !== null ? `${wins}/${decided.length} wins · ${winRate.toFixed(0)}%` : "no closed trades yet"}
-          delay={0.12}
         />
         <StatCard
           label="Open positions"
           value={open.length}
           format={(n) => String(Math.round(n))}
           sub={`${closed.length} closed`}
-          delay={0.18}
         />
       </div>
 
@@ -64,7 +60,7 @@ export default function Dashboard({ equity, trades }: { equity: EquitySnapshot[]
         <AssetPnL closed={closed} />
       </div>
 
-      <GlassCard className="panel" delay={0.1}>
+      <Card className="panel">
         <div className="panel-head"><h2>Open positions</h2></div>
         {open.length ? (
           <div className="scroll-x">
@@ -93,7 +89,7 @@ export default function Dashboard({ equity, trades }: { equity: EquitySnapshot[]
         ) : (
           <p className="empty-note">No open positions right now — the bot is waiting for a high-confidence signal.</p>
         )}
-      </GlassCard>
+      </Card>
     </div>
   );
 }

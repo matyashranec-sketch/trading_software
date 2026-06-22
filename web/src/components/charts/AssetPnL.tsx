@@ -13,14 +13,14 @@ export default function AssetPnL({ closed }: { closed: Trade[] }) {
   }));
 
   return (
-    <div className="glass panel">
+    <div className="card panel">
       <div className="panel-head"><h2>Realized P&amp;L by asset</h2></div>
       {data.length ? (
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data} margin={{ top: 10, right: 8, left: 4, bottom: 0 }}>
-            <XAxis dataKey="asset" stroke="#5e5d78" fontSize={11} tickLine={false} axisLine={false} />
+            <XAxis dataKey="asset" stroke="#6a6a73" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis
-              stroke="#5e5d78"
+              stroke="#6a6a73"
               fontSize={11}
               width={56}
               tickFormatter={(v) => compactMoney(Number(v))}
@@ -28,14 +28,14 @@ export default function AssetPnL({ closed }: { closed: Trade[] }) {
               axisLine={false}
             />
             <Tooltip
-              cursor={{ fill: "rgba(124,92,255,0.08)" }}
+              cursor={{ fill: "rgba(255,255,255,0.05)" }}
               content={({ active, payload }: any) =>
                 active && payload?.length ? (
                   <div className="chart-tip">
                     <div className="t-label">{payload[0].payload.asset}</div>
                     <div
-                      className="t-val"
-                      style={{ color: payload[0].payload.pnl >= 0 ? "#2ee6a8" : "#ff5c7a" }}
+                      className="t-val mono"
+                      style={{ color: payload[0].payload.pnl >= 0 ? "#6fbf8e" : "#e27e6f" }}
                     >
                       {money(payload[0].payload.pnl)}
                     </div>
@@ -43,18 +43,15 @@ export default function AssetPnL({ closed }: { closed: Trade[] }) {
                 ) : null
               }
             />
-            <Bar dataKey="pnl" radius={[6, 6, 0, 0]} isAnimationActive animationDuration={800}>
+            <Bar dataKey="pnl" radius={[4, 4, 0, 0]} isAnimationActive={false}>
               {data.map((d, i) => (
-                <Cell key={i} fill={d.pnl >= 0 ? "#2ee6a8" : "#ff5c7a"} />
+                <Cell key={i} fill={d.pnl >= 0 ? "#6fbf8e" : "#e27e6f"} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       ) : (
-        <div className="chart-empty">
-          <div className="big">💹</div>
-          <div>No closed trades yet — P&amp;L appears once positions close.</div>
-        </div>
+        <div className="chart-empty">No closed trades yet — P&amp;L appears once positions close.</div>
       )}
     </div>
   );

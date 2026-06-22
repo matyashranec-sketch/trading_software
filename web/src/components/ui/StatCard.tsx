@@ -1,5 +1,4 @@
-import CountUp from "./CountUp";
-import GlassCard from "./GlassCard";
+import Card from "./Card";
 import Sparkline from "./Sparkline";
 
 export default function StatCard({
@@ -10,7 +9,6 @@ export default function StatCard({
   valueClass,
   spark,
   sparkColor,
-  delay = 0,
 }: {
   label: string;
   value: number | null;
@@ -19,13 +17,12 @@ export default function StatCard({
   valueClass?: string;
   spark?: number[];
   sparkColor?: string;
-  delay?: number;
 }) {
   return (
-    <GlassCard className="stat" delay={delay}>
+    <Card className="stat">
       <div className="label">{label}</div>
       <div className={`value mono ${valueClass ?? ""}`}>
-        {value === null ? "—" : <CountUp value={value} format={format} />}
+        {value === null ? "—" : format(value)}
       </div>
       {sub && <div className="sub">{sub}</div>}
       {spark && spark.length > 1 && (
@@ -33,6 +30,6 @@ export default function StatCard({
           <Sparkline data={spark} color={sparkColor} />
         </div>
       )}
-    </GlassCard>
+    </Card>
   );
 }

@@ -2,8 +2,8 @@ import { dateTime } from "../lib/format";
 import type { Evaluation, Prediction } from "../types";
 import AccuracyBars from "./charts/AccuracyBars";
 import AssetBadge from "./ui/AssetBadge";
+import Card from "./ui/Card";
 import ConfidenceBar from "./ui/ConfidenceBar";
-import GlassCard from "./ui/GlassCard";
 import Pill from "./ui/Pill";
 
 function evalFor(p: Prediction, horizon: string): Evaluation | undefined {
@@ -19,23 +19,23 @@ function Outcome({ ev }: { ev?: Evaluation }) {
 export default function Leaderboard({ predictions }: { predictions: Prediction[] }) {
   if (!predictions.length) {
     return (
-      <GlassCard className="panel">
+      <Card className="panel">
         <p className="empty-note">No signals recorded yet — they appear after the bot's first cycles.</p>
-      </GlassCard>
+      </Card>
     );
   }
 
   return (
     <div className="stack">
-      <GlassCard className="panel">
+      <Card className="panel">
         <div className="panel-head"><h2>Model accuracy — is the AI any good?</h2></div>
         <p className="sub">
           Every signal is scored against the real price after 24h and 7d. Pushes (no move) are excluded.
         </p>
         <AccuracyBars predictions={predictions} />
-      </GlassCard>
+      </Card>
 
-      <GlassCard className="panel" delay={0.08}>
+      <Card className="panel">
         <div className="panel-head"><h2>Recent signals</h2></div>
         <div className="scroll-x">
           <table className="table">
@@ -63,7 +63,7 @@ export default function Leaderboard({ predictions }: { predictions: Prediction[]
             </tbody>
           </table>
         </div>
-      </GlassCard>
+      </Card>
     </div>
   );
 }
