@@ -29,8 +29,12 @@ TF_SETS: dict[str, tuple[str, str, str]] = {
 }
 
 
+MODES = ("reversal", "momentum")
+
+
 @dataclass(frozen=True)
 class Combo:
+    mode: str
     tf: str
     min_confluence: int
     reward_risk: float
@@ -38,23 +42,25 @@ class Combo:
     atr_stop_mult: float
 
     def key(self) -> str:
-        return (f"{self.tf}|mc{self.min_confluence}|rr{self.reward_risk}"
+        return (f"{self.mode}|{self.tf}|mc{self.min_confluence}|rr{self.reward_risk}"
                 f"|ds{self.delta_strength_min}|sm{self.atr_stop_mult}")
 
 
 def default_grid(base: StrategyParams) -> list[Combo]:
     combos: list[Combo] = []
-    for tf in TF_SETS:
-        for mc in (4, 5):
-            for rr in (1.5, 2.0, 3.0):
-                for ds in (0.10, 0.20):
-                    combos.append(Combo(tf, mc, rr, ds, base.atr_stop_mult))
+    for mode in MODES:
+        for tf in TF_SETS:
+            for mc in (4, 5):
+                for rr in (1.5, 2.0, 3.0):
+                    for ds in (0.10, 0.20):
+                        combos.append(Combo(mode, tf, mc, rr, ds, base.atr_stop_mult))
     return combos
 
 
 def _params_for(base: StrategyParams, c: Combo) -> StrategyParams:
-    return replace(base, min_confluence=c.min_confluence, reward_risk=c.reward_risk,
-                   delta_strength_min=c.delta_strength_min, atr_stop_mult=c.atr_stop_mult)
+    return replace(base, mode=c.mode, min_confluence=c.min_confluence,
+                   reward_risk=c.reward_risk, delta_strength_min=c.delta_strength_min,
+                   atr_stop_mult=c.atr_stop_mult)
 
 
 def _slim(r: BacktestReport) -> dict:
@@ -103,9 +109,9 @@ def evaluate_combo(combo: Combo, base: StrategyParams,
         test = simulate(htf, mtf, ltf, params, cfg, entry_range=(split, len(ltf)))
         per_asset[sym] = {"train": _slim(train), "test": _slim(test)}
     return {
-        "combo": combo.key(), "tf": combo.tf, "min_confluence": combo.min_confluence,
-        "reward_risk": combo.reward_risk, "delta_strength_min": combo.delta_strength_min,
-        "atr_stop_mult": combo.atr_stop_mult,
+        "combo": combo.key(), "mode": combo.mode, "tf": combo.tf,
+        "min_confluence": combo.min_confluence, "reward_risk": combo.reward_risk,
+        "delta_strength_min": combo.delta_strength_min, "atr_stop_mult": combo.atr_stop_mult,
         "aggregate": _aggregate(per_asset, min_trades), "assets": per_asset,
     }
 

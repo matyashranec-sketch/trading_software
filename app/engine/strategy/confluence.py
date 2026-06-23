@@ -4,15 +4,19 @@
 scalars) and returns a :class:`ConfluenceResult`: the trade direction, a strict
 pass/fail, the per-condition checklist, and structure-based stop/target.
 
+Two setup **modes** (chosen per asset via ``StrategyParams.mode``):
+
+* ``reversal`` — trade *with* the HTF trend, on a pullback into value, after a
+  liquidity **sweep**, confirmed by order flow (CVD divergence or strong delta)
+  and a break of structure. Fades exhaustion. Suits structured markets (BTC/BNB).
+* ``momentum`` — trade the **breakout out of value** in the trend direction
+  (break of structure) only when order flow **confirms** it (strong delta + rising
+  CVD; weak delta = fake breakout). Buys strength. Suits high-beta alts.
+
 The **same function runs live and in the backtest** — that's what makes the
 backtest trustworthy. Live-only inputs (order-book imbalance, funding) are
 optional: when absent (as in a historical backtest) their checks simply don't
 count, rather than silently passing.
-
-Strategy intent (symmetric long/short): trade only **with** the higher-timeframe
-trend, on a **pullback into value**, after a **liquidity sweep**, confirmed by
-**order flow** (CVD divergence / delta) and a **break of structure**, with sane
-**ATR risk** — and, on futures, only when **funding** isn't crowding our side.
 """
 from __future__ import annotations
 
@@ -23,9 +27,8 @@ from app.sources.market_data import Candle
 
 LONG = "long"
 SHORT = "short"
-
-# Checks that must ALL pass for any trade (the non-negotiable core).
-MANDATORY = ("trend", "cvd", "risk")
+REVERSAL = "reversal"
+MOMENTUM = "momentum"
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,7 @@ class StrategyParams:
     """Tunable knobs (overridden from Settings in production; defaults here keep
     the strategy usable/testable standalone)."""
 
+    mode: str = REVERSAL           # "reversal" | "momentum"
     trend_ema_period: int = 50
     atr_period: int = 14
     atr_min_pct: float = 0.003     # below this = dead market, skip
@@ -43,7 +47,7 @@ class StrategyParams:
     sweep_recent: int = 3
     vol_bins: int = 24
     reward_risk: float = 2.0       # target = entry +/- RR * risk
-    atr_stop_mult: float = 1.5     # fallback stop distance when no sweep level
+    atr_stop_mult: float = 1.5     # fallback stop distance when no structure level
     funding_cap: float = 0.0005    # |funding| above this crowds that side
     min_confluence: int = 5        # how many checks must pass (strict)
     delta_strength_min: float = 0.15  # min |taker delta| / volume for the order-flow check
@@ -113,38 +117,57 @@ def evaluate(snap: MarketSnapshot, params: StrategyParams | None = None) -> Conf
     mtf_cvd = F.cvd_series(mtf)
     fair = F.vwap(mtf)
     va = F.volume_profile(mtf, p.vol_bins)
-    last_ltf = ltf[-1]
     args = (p.swing_left, p.swing_right)
-
     dstr = F.delta_strength(ltf, p.delta_lookback)
     cslope = F.cvd_slope(mtf_cvd, p.cvd_lookback)
-    in_value = va.low <= price <= va.high   # trading at value, not extended
 
-    checks: dict[str, bool] = {}
     feats: dict = {
-        "structure": structure, "htf_ema": round(htf_ema, 6), "atr_pct": round(atr_pct, 5),
-        "vwap": round(fair, 6), "poc": round(va.poc, 6),
+        "mode": p.mode, "structure": structure, "htf_ema": round(htf_ema, 6),
+        "atr_pct": round(atr_pct, 5), "vwap": round(fair, 6), "poc": round(va.poc, 6),
         "value_low": round(va.low, 6), "value_high": round(va.high, 6),
         "cvd": round(mtf_cvd[-1], 4), "cvd_slope": round(cslope, 4),
         "delta_strength": round(dstr, 4),
         "funding": snap.funding_rate, "book_imbalance": snap.book_imbalance,
     }
 
-    # risk filter (volatility sane + not over-extended from the trend EMA)
+    # risk filter (volatility sane + not over-extended from the trend EMA) — shared
     risk_ok = (
         p.atr_min_pct <= atr_pct <= p.atr_max_pct
         and a > 0
         and abs(price - htf_ema) <= p.overext_atr_mult * a
     )
-    checks["risk"] = risk_ok
-    checks["location"] = in_value
 
-    swept: F.Swing | None = None
+    builder = _checks_momentum if p.mode == MOMENTUM else _checks_reversal
+    checks, stop_ref, mandatory = builder(
+        direction, price, htf_ema, mtf, ltf, mtf_cvd, va, dstr, cslope, snap, p, args
+    )
+    checks["risk"] = risk_ok
+
+    score = sum(1 for v in checks.values() if v)
+    max_score = len(checks)
+    mandatory_ok = all(checks.get(k, False) for k in mandatory)
+    passed = mandatory_ok and score >= p.min_confluence
+
+    stop_price = target_price = None
+    if passed:
+        stop_price, target_price = _stop_target(direction, price, a, stop_ref, p)
+
+    return ConfluenceResult(
+        direction=direction, passed=passed, score=score, max_score=max_score,
+        checks=checks, stop_price=stop_price, target_price=target_price,
+        rationale=_rationale(p.mode, direction, checks, passed, mandatory_ok, p),
+        features=feats,
+    )
+
+
+def _checks_reversal(direction, price, htf_ema, mtf, ltf, mtf_cvd, va, dstr, cslope,
+                     snap, p, args):
+    """Fade exhaustion: pullback into value + liquidity sweep + order-flow turn."""
+    checks: dict[str, bool] = {"location": va.low <= price <= va.high}  # at value
     if direction == LONG:
         checks["trend"] = price > htf_ema
         swept = F.bullish_sweep(ltf, p.sweep_recent, *args)
         checks["sweep"] = swept is not None
-        # real order flow: CVD divergence OR genuinely strong buy delta with rising CVD
         checks["cvd"] = F.bullish_cvd_divergence(mtf, mtf_cvd, *args) or (
             dstr >= p.delta_strength_min and cslope > 0
         )
@@ -153,7 +176,7 @@ def evaluate(snap: MarketSnapshot, params: StrategyParams | None = None) -> Conf
             checks["funding"] = snap.funding_rate <= p.funding_cap
         if snap.book_imbalance is not None:
             checks["obi"] = snap.book_imbalance > 0
-    else:  # SHORT
+    else:
         checks["trend"] = price < htf_ema
         swept = F.bearish_sweep(ltf, p.sweep_recent, *args)
         checks["sweep"] = swept is not None
@@ -165,44 +188,57 @@ def evaluate(snap: MarketSnapshot, params: StrategyParams | None = None) -> Conf
             checks["funding"] = snap.funding_rate >= -p.funding_cap
         if snap.book_imbalance is not None:
             checks["obi"] = snap.book_imbalance < 0
-
-    score = sum(1 for v in checks.values() if v)
-    max_score = len(checks)
-    mandatory_ok = all(checks.get(k, False) for k in MANDATORY)
-    passed = mandatory_ok and score >= p.min_confluence
-
-    stop_price = target_price = None
-    if passed:
-        stop_price, target_price = _stop_target(direction, price, a, swept, p)
-
-    result = ConfluenceResult(
-        direction=direction, passed=passed, score=score, max_score=max_score,
-        checks=checks, stop_price=stop_price, target_price=target_price,
-        rationale=_rationale(direction, checks, passed, mandatory_ok, p),
-        features=feats,
-    )
-    return result
+    return checks, swept, ("trend", "cvd", "risk")
 
 
-def _stop_target(direction: str, price: float, atr: float, swept, p: StrategyParams):
-    """Structure-based stop (just beyond the swept level, else ATR) + RR target."""
+def _checks_momentum(direction, price, htf_ema, mtf, ltf, mtf_cvd, va, dstr, cslope,
+                     snap, p, args):
+    """Buy strength: breakout out of value + BOS, confirmed by aggressive flow."""
+    checks: dict[str, bool] = {}
+    if direction == LONG:
+        checks["trend"] = price > htf_ema
+        checks["location"] = price >= va.high                    # breaking out above value
+        checks["bos"] = F.bullish_bos(ltf, *args)                # momentum trigger
+        checks["cvd"] = dstr >= p.delta_strength_min and cslope > 0   # flow confirms
+        lows = F.swing_lows(ltf, *args)
+        stop_ref = lows[-1] if lows else None
+        if snap.funding_rate is not None:
+            checks["funding"] = snap.funding_rate <= p.funding_cap
+        if snap.book_imbalance is not None:
+            checks["obi"] = snap.book_imbalance > 0
+    else:
+        checks["trend"] = price < htf_ema
+        checks["location"] = price <= va.low
+        checks["bos"] = F.bearish_bos(ltf, *args)
+        checks["cvd"] = dstr <= -p.delta_strength_min and cslope < 0
+        highs = F.swing_highs(ltf, *args)
+        stop_ref = highs[-1] if highs else None
+        if snap.funding_rate is not None:
+            checks["funding"] = snap.funding_rate >= -p.funding_cap
+        if snap.book_imbalance is not None:
+            checks["obi"] = snap.book_imbalance < 0
+    return checks, stop_ref, ("trend", "cvd", "risk", "bos")
+
+
+def _stop_target(direction: str, price: float, atr: float, stop_ref, p: StrategyParams):
+    """Structure-based stop (just beyond the reference swing, else ATR) + RR target."""
     buffer = 0.1 * atr
     if direction == LONG:
-        stop = (swept.price - buffer) if swept else (price - p.atr_stop_mult * atr)
+        stop = (stop_ref.price - buffer) if stop_ref else (price - p.atr_stop_mult * atr)
         stop = min(stop, price - buffer)  # never above entry
         risk = price - stop
         return round(stop, 8), round(price + p.reward_risk * risk, 8)
-    stop = (swept.price + buffer) if swept else (price + p.atr_stop_mult * atr)
+    stop = (stop_ref.price + buffer) if stop_ref else (price + p.atr_stop_mult * atr)
     stop = max(stop, price + buffer)
     risk = stop - price
     return round(stop, 8), round(price - p.reward_risk * risk, 8)
 
 
-def _rationale(direction, checks, passed, mandatory_ok, p) -> str:
+def _rationale(mode, direction, checks, passed, mandatory_ok, p) -> str:
     marks = " ".join(f"{'✓' if v else '✗'}{k}" for k, v in checks.items())
     n = sum(1 for v in checks.values() if v)
     verdict = (
-        f"TRADE {direction.upper()}" if passed
+        f"TRADE {direction.upper()} ({mode})" if passed
         else ("no trade — mandatory check failed" if not mandatory_ok
               else f"no trade — {n}/{p.min_confluence} confluence")
     )

@@ -78,6 +78,7 @@ def params_from_settings(settings=None) -> StrategyParams:
     d = StrategyParams()
     get = lambda name, default: getattr(s, name, default)  # noqa: E731
     return StrategyParams(
+        mode=get("strategy_mode", d.mode),
         trend_ema_period=get("strategy_trend_ema", d.trend_ema_period),
         atr_period=get("strategy_atr_period", d.atr_period),
         atr_min_pct=get("strategy_atr_min_pct", d.atr_min_pct),
@@ -91,6 +92,16 @@ def params_from_settings(settings=None) -> StrategyParams:
         delta_lookback=get("strategy_delta_lookback", d.delta_lookback),
         cvd_lookback=get("strategy_cvd_lookback", d.cvd_lookback),
     )
+
+
+def params_for_asset(asset: Asset, settings=None) -> StrategyParams:
+    """StrategyParams for one asset, applying any per-asset mode override."""
+    from dataclasses import replace
+
+    s = settings or get_settings()
+    base = params_from_settings(s)
+    mode = (getattr(s, "asset_modes", {}) or {}).get(asset.symbol, base.mode)
+    return base if mode == base.mode else replace(base, mode=mode)
 
 
 def build_snapshot(asset: Asset, settings=None) -> MarketSnapshot:
@@ -134,7 +145,6 @@ def build_snapshot(asset: Asset, settings=None) -> MarketSnapshot:
 def generate_signals(session: Session, settings=None) -> list[StrategySignal]:
     """Evaluate every tradable asset; log directional signals; return them."""
     s = settings or get_settings()
-    params = params_from_settings(s)
     signals: list[StrategySignal] = []
 
     for asset in ASSETS:
@@ -146,7 +156,7 @@ def generate_signals(session: Session, settings=None) -> list[StrategySignal]:
             logger.warning("Skipping %s: %s", asset.symbol, exc)
             continue
 
-        res = C.evaluate(snap, params)
+        res = C.evaluate(snap, params_for_asset(asset, s))
         if res.direction is None:
             logger.info("%s: no directional bias (%s)", asset.symbol, res.rationale)
             continue
