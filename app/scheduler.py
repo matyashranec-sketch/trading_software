@@ -38,15 +38,13 @@ def run_forever() -> None:
     init_db()
     _cycle()  # run once immediately on start
 
+    minutes = getattr(settings, "run_interval_minutes", 0)
+    trigger = (IntervalTrigger(minutes=minutes) if minutes
+               else IntervalTrigger(hours=settings.run_interval_hours))
     scheduler = BlockingScheduler(timezone="UTC")
-    scheduler.add_job(
-        _cycle,
-        IntervalTrigger(hours=settings.run_interval_hours),
-        id="cycle",
-        replace_existing=True,
-    )
-    logger.info("Local scheduler started — cycle every %d h. Ctrl-C to stop.",
-                settings.run_interval_hours)
+    scheduler.add_job(_cycle, trigger, id="cycle", replace_existing=True)
+    logger.info("Local scheduler started — cycle every %s. Ctrl-C to stop.",
+                f"{minutes} min" if minutes else f"{settings.run_interval_hours} h")
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
