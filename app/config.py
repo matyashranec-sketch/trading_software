@@ -28,17 +28,24 @@ class Asset:
     news_terms: tuple[str, ...] = ()          # keywords to filter the crypto news feed
 
 
-# --- Tracked / tradable assets (crypto-only, traded vs USDT on Binance) ---
+# --- Tracked assets (crypto-only, traded vs USDT on Binance) ---
+# Only BTC + BNB are tradable right now: they're the coins with a backtested
+# order-flow edge (reversal; the OOS optimizer flagged them as the profitable
+# 2/5). ETH/SOL showed no edge in either reversal or momentum, and XRP was only
+# noise-level positive (+0.44%/PF 1.06 full-period). The non-tradable coins stay
+# in the list so the accuracy leaderboard keeps scoring them, but the trader and
+# the default backtest/optimize basket skip them. Flip tradable=True again once a
+# backtest (+ out-of-sample optimize) shows a real edge for that coin.
 ASSETS: list[Asset] = [
     Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin",
           binance_symbol="BTCUSDT", news_terms=("bitcoin", "btc")),
-    Asset("ETH", "Ethereum", "crypto", coingecko_id="ethereum",
+    Asset("ETH", "Ethereum", "crypto", coingecko_id="ethereum", tradable=False,
           binance_symbol="ETHUSDT", news_terms=("ethereum", "eth", "ether")),
-    Asset("SOL", "Solana", "crypto", coingecko_id="solana",
+    Asset("SOL", "Solana", "crypto", coingecko_id="solana", tradable=False,
           binance_symbol="SOLUSDT", news_terms=("solana", "sol")),
     Asset("BNB", "BNB", "crypto", coingecko_id="binancecoin",
           binance_symbol="BNBUSDT", news_terms=("bnb", "binance coin", "binance")),
-    Asset("XRP", "XRP", "crypto", coingecko_id="ripple",
+    Asset("XRP", "XRP", "crypto", coingecko_id="ripple", tradable=False,
           binance_symbol="XRPUSDT", news_terms=("xrp", "ripple")),
 ]
 ASSETS_BY_SYMBOL: dict[str, Asset] = {a.symbol: a for a in ASSETS}
