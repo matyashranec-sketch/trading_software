@@ -36,6 +36,7 @@ TRADE_CANCELED = "canceled"    # order never resulted in a position
 CLOSE_SIGNAL = "signal"
 CLOSE_STOP_LOSS = "stop_loss"
 CLOSE_TAKE_PROFIT = "take_profit"
+CLOSE_MAX_HOLD = "max_hold"  # held longer than max_hold_bars -> time stop
 
 
 def utcnow() -> datetime:

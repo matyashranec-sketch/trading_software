@@ -84,6 +84,19 @@ def test_bullish_bos_breaks_recent_swing_high():
     assert F.bullish_bos(rows) is True
 
 
+def test_delta_strength_fraction_of_volume():
+    cs = [mk(low=1, high=2, close=1.5, vol=100, taker=70) for _ in range(5)]
+    # last 3 candles: delta +40 each (2*70-100), volume 100 each -> 120/300
+    assert abs(F.delta_strength(cs, 3) - 0.4) < 1e-9
+
+
+def test_cvd_slope_sign():
+    buying = [mk(low=1, high=2, close=1.5, vol=100, taker=70) for _ in range(30)]
+    selling = [mk(low=1, high=2, close=1.5, vol=100, taker=30) for _ in range(30)]
+    assert F.cvd_slope(F.cvd_series(buying), 20) > 0
+    assert F.cvd_slope(F.cvd_series(selling), 20) < 0
+
+
 def test_volume_profile_poc_at_heavy_price():
     rows = [mk(low=49, high=51, close=50, vol=1000) for _ in range(5)]
     rows += [mk(low=59, high=61, close=60, vol=10) for _ in range(5)]

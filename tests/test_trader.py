@@ -223,6 +223,26 @@ def test_run_sync_triggers_stop_loss(db, monkeypatch):
     assert t.pnl == -100.0 and summary["closed"] == 1
 
 
+def test_run_sync_time_stop_closes_stale_position(db, monkeypatch):
+    from datetime import timedelta
+
+    from app.models import utcnow
+
+    monkeypatch.setattr(trader_mod, "fetch_price", lambda asset: 100.0)  # no stop/take hit
+    old = utcnow() - timedelta(hours=48)  # older than 96 bars × 15m = 24h
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_OPEN, created_at=old,
+                 entry_price=100.0, qty=10.0))
+    db.commit()
+    broker = FakeBroker(positions=[long_position("BTC", 10, 100)])
+
+    summary = run_sync(db, broker=broker)
+
+    assert broker.closed == ["BTC"]
+    t = db.query(Trade).one()
+    assert t.status == TRADE_CLOSED and t.close_reason == "max_hold"
+    assert summary["closed"] == 1
+
+
 def test_run_sync_triggers_take_profit_on_short(db, monkeypatch):
     monkeypatch.setattr(trader_mod, "fetch_price", lambda asset: 90.0)  # below short target
     db.add(Trade(asset="BTC", side=SIDE_SELL, status=TRADE_OPEN,

@@ -57,6 +57,19 @@ def test_uptrend_selects_long_and_passes_core_checks():
     assert res.features["structure"] == "up"
 
 
+def test_weak_delta_no_longer_passes_order_flow_check():
+    up = _zigzag(UPTREND)
+    # weaken the last few candles to near-zero delta (taker ~= half of volume)
+    for i in range(-PARAMS.delta_lookback, 0):
+        c = up[i]
+        up[i] = mk(low=c.low, high=c.high, close=c.close, open=c.open,
+                   vol=100, taker=51, t=c.open_time)
+    snap = MarketSnapshot(asset_symbol="BTC", price=up[-1].close, htf=up, mtf=up, ltf=up)
+    res = evaluate(snap, PARAMS)
+    assert res.checks["cvd"] is False   # no divergence + weak delta -> order flow fails
+    assert res.passed is False          # cvd is mandatory
+
+
 def test_funding_and_obi_checks_only_count_when_present():
     up = _zigzag(UPTREND)
     base = MarketSnapshot(asset_symbol="BTC", price=up[-1].close, htf=up, mtf=up, ltf=up)

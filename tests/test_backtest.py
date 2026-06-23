@@ -45,6 +45,18 @@ def test_winning_long_trade_accounts_fees_and_r(monkeypatch):
     assert rep.profit_factor == float("inf")  # no losers
 
 
+def test_entry_range_gates_new_entries(monkeypatch):
+    # evaluate always passes, but an empty entry range must block all entries
+    monkeypatch.setattr(
+        B.C, "evaluate",
+        lambda snap, params: ConfluenceResult(direction=C.LONG, passed=True, score=5,
+                                              max_score=6, checks={}, stop_price=95.0,
+                                              target_price=110.0),
+    )
+    htf, mtf, ltf = _ctx()
+    assert B.simulate(htf, mtf, ltf, entry_range=(0, 0)).trades == 0
+
+
 def test_no_signal_means_no_trades(monkeypatch):
     monkeypatch.setattr(
         B.C, "evaluate",

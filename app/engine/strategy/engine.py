@@ -87,6 +87,9 @@ def params_from_settings(settings=None) -> StrategyParams:
         atr_stop_mult=get("strategy_atr_stop_mult", d.atr_stop_mult),
         funding_cap=get("strategy_funding_cap", d.funding_cap),
         min_confluence=get("min_confluence", d.min_confluence),
+        delta_strength_min=get("strategy_delta_strength_min", d.delta_strength_min),
+        delta_lookback=get("strategy_delta_lookback", d.delta_lookback),
+        cvd_lookback=get("strategy_cvd_lookback", d.cvd_lookback),
     )
 
 

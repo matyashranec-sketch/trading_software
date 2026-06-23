@@ -102,6 +102,48 @@ def cmd_backtest(args: argparse.Namespace) -> None:
     _print({"days": args.days, "htf": htf, "mtf": mtf, "ltf": ltf, "results": summaries})
 
 
+def cmd_optimize(args: argparse.Namespace) -> None:
+    """Grid-search robust strategy params with a train/test split."""
+    import time as _time
+    from pathlib import Path
+
+    from app.config import ASSETS, ASSETS_BY_SYMBOL, DATA_DIR, get_settings
+    from app.engine import optimize as opt
+    from app.engine.backtest import BacktestConfig
+    from app.engine.strategy.engine import params_from_settings
+
+    settings = get_settings()
+    base = params_from_settings(settings)
+    cfg = BacktestConfig()
+    futures = settings.broker == "binance_futures"
+
+    wanted = [args.asset] if args.asset else [a.symbol for a in ASSETS if a.tradable]
+    symbols, pairs = [], []
+    for sym in wanted:
+        asset = ASSETS_BY_SYMBOL.get(sym)
+        if asset is None:
+            print(f"unknown asset {sym!r}")
+            continue
+        symbols.append(sym)
+        pairs.append(asset.binance_symbol or f"{sym}USDT")
+
+    report = opt.run(symbols, pairs, days=args.days, base=base, cfg=cfg,
+                     futures=futures, min_trades=args.min_trades)
+
+    out_dir = Path(DATA_DIR) / "backtests"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"optimize_{int(_time.time())}.json"
+    path.write_text(json.dumps(report, indent=2, default=str))
+
+    top = [{"combo": r["combo"], **r["aggregate"]} for r in report["ranked"][:8]]
+    _print({
+        "days": args.days,
+        "best": report["best"]["combo"] if report["best"] else None,
+        "report": str(path),
+        "top": top,
+    })
+
+
 def cmd_liquidate(args: argparse.Namespace) -> None:
     from app.broker import get_broker
 
@@ -137,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument("--htf", help="trend timeframe (default from config, e.g. 4h)")
     p_bt.add_argument("--mtf", help="structure timeframe (default from config, e.g. 1h)")
     p_bt.add_argument("--ltf", help="decision timeframe (default from config, e.g. 15m)")
+    p_opt = sub.add_parser("optimize", help="grid-search robust strategy params (train/test split)")
+    p_opt.add_argument("--asset", help="single asset symbol (default: all tradable)")
+    p_opt.add_argument("--days", type=int, default=365, help="lookback window in days")
+    p_opt.add_argument("--min-trades", type=int, default=15, dest="min_trades",
+                       help="ignore an asset's test slice below this many trades")
     return parser
 
 
@@ -148,6 +195,7 @@ _COMMANDS = {
     "run": cmd_run,
     "liquidate": cmd_liquidate,
     "backtest": cmd_backtest,
+    "optimize": cmd_optimize,
 }
 
 
