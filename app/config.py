@@ -117,6 +117,8 @@ class Settings(BaseSettings):
     strategy_htf: str = "4h"            # higher timeframe = trend bias
     strategy_mtf: str = "1h"            # mid = structure / value / CVD
     strategy_ltf: str = "15m"           # low = sweep / trigger / decision cadence
+    strategy_mode: str = "reversal"     # default setup style: "reversal" | "momentum"
+    asset_modes: dict[str, str] = {}    # per-asset override, e.g. {"ETH": "momentum"}
     min_confluence: int = 5             # how many checklist items must pass (strict)
     strategy_trend_ema: int = 50        # HTF trend filter
     strategy_atr_period: int = 14

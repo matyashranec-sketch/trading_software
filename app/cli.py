@@ -72,6 +72,9 @@ def cmd_backtest(args: argparse.Namespace) -> None:
 
     settings = get_settings()
     params = params_from_settings(settings)
+    if args.mode:
+        from dataclasses import replace
+        params = replace(params, mode=args.mode)
     cfg = BacktestConfig()
     futures = settings.broker == "binance_futures"
     htf = args.htf or getattr(settings, "strategy_htf", "4h")
@@ -179,6 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bt.add_argument("--htf", help="trend timeframe (default from config, e.g. 4h)")
     p_bt.add_argument("--mtf", help="structure timeframe (default from config, e.g. 1h)")
     p_bt.add_argument("--ltf", help="decision timeframe (default from config, e.g. 15m)")
+    p_bt.add_argument("--mode", choices=["reversal", "momentum"], help="setup style override")
     p_opt = sub.add_parser("optimize", help="grid-search robust strategy params (train/test split)")
     p_opt.add_argument("--asset", help="single asset symbol (default: all tradable)")
     p_opt.add_argument("--days", type=int, default=365, help="lookback window in days")

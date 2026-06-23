@@ -26,6 +26,17 @@ def _uptrend(n_pivots=18, leg=5):
     return out
 
 
+def test_params_for_asset_applies_mode_override():
+    from types import SimpleNamespace
+
+    from app.config import Asset
+    from app.engine.strategy.engine import params_for_asset
+
+    s = SimpleNamespace(strategy_mode="reversal", asset_modes={"ETH": "momentum"})
+    assert params_for_asset(Asset("ETH", "Ethereum", "crypto"), s).mode == "momentum"
+    assert params_for_asset(Asset("BTC", "Bitcoin", "crypto"), s).mode == "reversal"
+
+
 def test_generate_signals_logs_predictions(db, monkeypatch):
     up = _uptrend()
     snap = MarketSnapshot(asset_symbol="BTC", price=up[-1].close, htf=up, mtf=up, ltf=up)

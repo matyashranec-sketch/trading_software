@@ -31,8 +31,8 @@ def test_rank_prefers_more_profitable_then_higher_edge():
     assert ranked[1] is c  # tie on 2 -> higher summed test edge first
 
 
-def test_default_grid_spans_both_timeframes():
+def test_default_grid_spans_modes_and_timeframes():
     combos = default_grid(StrategyParams())
-    tfs = {c.tf for c in combos}
-    assert {"15m", "1h"} <= tfs
+    assert {"15m", "1h"} <= {c.tf for c in combos}
+    assert {"reversal", "momentum"} <= {c.mode for c in combos}
     assert len(combos) == len({c.key() for c in combos})  # keys unique

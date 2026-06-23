@@ -1,4 +1,6 @@
 """Integration tests for the confluence evaluator (side selection + gating)."""
+from dataclasses import replace
+
 from app.engine.strategy.confluence import LONG, MarketSnapshot, StrategyParams, evaluate
 from app.sources.market_data import Candle
 
@@ -68,6 +70,39 @@ def test_weak_delta_no_longer_passes_order_flow_check():
     res = evaluate(snap, PARAMS)
     assert res.checks["cvd"] is False   # no divergence + weak delta -> order flow fails
     assert res.passed is False          # cvd is mandatory
+
+
+def test_modes_use_different_checklists():
+    up = _zigzag(UPTREND)
+    snap = MarketSnapshot(asset_symbol="BTC", price=up[-1].close, htf=up, mtf=up, ltf=up)
+    rev = evaluate(snap, replace(PARAMS, mode="reversal"))
+    mom = evaluate(snap, replace(PARAMS, mode="momentum"))
+    assert "sweep" in rev.checks and "sweep" not in mom.checks  # dispatch differs
+    assert rev.features["mode"] == "reversal" and mom.features["mode"] == "momentum"
+
+
+def test_momentum_enters_on_confirmed_breakout():
+    up = _zigzag(UPTREND)
+    # strong aggressive buying on the breakout candle
+    up[-1] = mk(low=up[-1].low, high=up[-1].high, close=up[-1].high,
+                open=up[-1].low, vol=100, taker=95, t=up[-1].open_time)
+    snap = MarketSnapshot(asset_symbol="BTC", price=up[-1].close, htf=up, mtf=up, ltf=up)
+    res = evaluate(snap, replace(PARAMS, mode="momentum"))
+    assert res.direction == LONG
+    assert res.checks["bos"] is True and res.checks["cvd"] is True
+    assert res.checks["location"] is True   # broke out above the value area
+    assert res.passed is True
+
+
+def test_momentum_rejects_weak_delta_breakout():
+    up = _zigzag(UPTREND)
+    for i in range(-PARAMS.delta_lookback, 0):
+        c = up[i]
+        up[i] = mk(low=c.low, high=c.high, close=c.close, open=c.open,
+                   vol=100, taker=51, t=c.open_time)  # weak delta = possible fake breakout
+    snap = MarketSnapshot(asset_symbol="BTC", price=up[-1].close, htf=up, mtf=up, ltf=up)
+    res = evaluate(snap, replace(PARAMS, mode="momentum"))
+    assert res.checks["cvd"] is False and res.passed is False
 
 
 def test_funding_and_obi_checks_only_count_when_present():
