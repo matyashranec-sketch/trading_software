@@ -113,20 +113,39 @@ class Settings(BaseSettings):
     news_limit: int = 15               # headlines fed to the model per asset
     news_lookback_days: int = 3
 
-    # --- Trading strategy / risk (the bot evaluates every ~2h via cron) ---
-    min_confidence: float = 75.0       # only trade when max(bull,bear) >= this
-    require_fresh_news: bool = True     # only trade when news is recent ("po news")
-    news_fresh_hours: int = 24          # how recent "fresh" means
-    max_position_pct: float = 0.10      # target position size per asset (of equity)
-    max_open_positions: int = 5         # cap concurrent open positions
-    cash_buffer_pct: float = 0.10       # never deploy this fraction of cash
-    allow_short: bool = False           # bearish closes longs; shorts only if true
-    scale_size_by_confidence: bool = False  # size *= confidence/100 when true
-    stop_loss_pct: float = 0.0          # 0 = disabled; e.g. 0.08 = -8% hard stop
-    take_profit_pct: float = 0.0        # 0 = disabled; e.g. 0.15 = +15% target
+    # --- Order-flow strategy: timeframes + confluence tuning ---
+    strategy_htf: str = "4h"            # higher timeframe = trend bias
+    strategy_mtf: str = "1h"            # mid = structure / value / CVD
+    strategy_ltf: str = "15m"           # low = sweep / trigger / decision cadence
+    min_confluence: int = 5             # how many checklist items must pass (strict)
+    strategy_trend_ema: int = 50        # HTF trend filter
+    strategy_atr_period: int = 14
+    strategy_atr_min_pct: float = 0.003  # skip dead volatility
+    strategy_atr_max_pct: float = 0.08   # skip chaotic volatility
+    strategy_overext_atr_mult: float = 4.0   # don't chase price far from the trend EMA
+    strategy_reward_risk: float = 2.0    # take-profit = entry +/- RR * risk
+    strategy_atr_stop_mult: float = 1.5  # fallback stop distance when no sweep level
+    strategy_funding_cap: float = 0.0005  # |funding| above this crowds that side
 
-    # --- Optional local scheduler (production uses GitHub Actions cron) ---
-    run_interval_hours: int = 2
+    # --- Position sizing / risk ---
+    risk_per_trade_pct: float = 0.005   # risk this fraction of equity per trade (~0.5%)
+    max_position_pct: float = 0.10      # per-position notional cap (× leverage) of equity
+    max_open_positions: int = 5         # cap concurrent open positions
+    cash_buffer_pct: float = 0.10       # never deploy this fraction of margin
+    allow_short: bool = True            # futures: take shorts as well as longs
+    stop_loss_pct: float = 0.0          # fallback only (strategy sets structure stops)
+    take_profit_pct: float = 0.0        # fallback only
+
+    # --- Legacy news/LLM signal (kept for the optional accuracy leaderboard; the
+    # trader no longer uses these — decisions come from the order-flow strategy) ---
+    min_confidence: float = 75.0
+    require_fresh_news: bool = True
+    news_fresh_hours: int = 24
+    scale_size_by_confidence: bool = False
+
+    # --- Scheduler cadence (production = systemd `app.cli run` on the EU box) ---
+    run_interval_minutes: int = 30      # order-flow strategy evaluates this often
+    run_interval_hours: int = 2         # legacy (unused when run_interval_minutes set)
 
     @property
     def has_finnhub(self) -> bool:

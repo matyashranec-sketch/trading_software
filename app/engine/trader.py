@@ -1,18 +1,19 @@
-"""Trading engine — turn AI signals into real (paper) Alpaca orders.
+"""Trading engine — turn order-flow confluence signals into real (testnet) orders.
 
-Run every ~2h by cron. Each run:
+Run every ~15–60 min by the scheduler. Each run:
 
-1. generate one signal per asset (news -> Gemini);
-2. gate it: trade only on **fresh news** and **high confidence** (the user's
-   "po news, když si je jistejší" rule);
-3. size and place the order, respecting position caps, cash buffer, market hours
-   (stocks) and idempotency (don't double-open);
-4. log a ``Trade`` (with the rationale + news that drove it) and an
+1. generate one signal per asset from the order-flow **confluence** engine
+   (deterministic rules — no news, no LLM);
+2. gate it: trade only when the strict confluence checklist **passes**, in the
+   direction the higher-timeframe trend allows (long **or** short on futures);
+3. size by **risk** (fixed % of equity per trade, derived from the structure
+   stop), respecting position caps / leverage / cash buffer and idempotency;
+4. log a ``Trade`` (with the confluence rationale that drove it) + an
    ``EquitySnapshot``.
 
-``run_sync`` reconciles open trades against Alpaca, applies optional stop-loss /
-take-profit exits, records equity and scores matured signals. Nothing is ever
-deleted — losing trades stay visible.
+``run_sync`` reconciles open trades against the broker, applies the
+structure-based stop-loss / take-profit, records equity and scores matured
+signals. Nothing is ever deleted — losing trades stay visible.
 """
 from __future__ import annotations
 
@@ -26,9 +27,8 @@ from app.broker import Account, Broker, Position, get_broker
 from app.broker.base import LONG, SHORT
 from app.config import ASSETS, Asset, get_settings
 from app.engine.evaluator import run_evaluations
-from app.engine.predictor import Signal, generate_signals
+from app.engine.strategy.engine import StrategySignal, generate_signals
 from app.models import (
-    BULLISH,
     CLOSE_SIGNAL,
     CLOSE_STOP_LOSS,
     CLOSE_TAKE_PROFIT,
@@ -70,7 +70,7 @@ def _position_for(asset: Asset, positions: list[Position]) -> Position | None:
     target = _norm(asset.symbol)
     for p in positions:
         ps = _norm(p.symbol)
-        if ps == target or ps == f"{target}USD":
+        if ps == target or ps == f"{target}USD" or ps == f"{target}USDT":
             return p
     return None
 
@@ -79,7 +79,7 @@ def _config_symbol(broker_symbol: str) -> str | None:
     ps = _norm(broker_symbol)
     for a in ASSETS:
         sym = _norm(a.symbol)
-        if ps == sym or ps == f"{sym}USD":
+        if ps == sym or ps == f"{sym}USD" or ps == f"{sym}USDT":
             return a.symbol
     return None
 
@@ -87,63 +87,71 @@ def _config_symbol(broker_symbol: str) -> str | None:
 # --------------------------------------------------------------------------- #
 # Decision logic (pure — easy to unit test)
 # --------------------------------------------------------------------------- #
-def decide(signal: Signal, holding: Position | None, open_count: int, market_open: bool,
+def decide(signal: StrategySignal, holding: Position | None, open_count: int,
            settings=None) -> Decision:
+    """Gate a confluence signal into an action (long/short/close/hold)."""
     settings = settings or get_settings()
 
-    if signal.asset.kind == "stock" and not market_open:
-        return Decision(ACTION_HOLD, "market closed")
-    if settings.require_fresh_news and not signal.has_fresh_news:
-        return Decision(ACTION_HOLD, "no fresh news")
-    if signal.confidence < settings.min_confidence:
-        return Decision(
-            ACTION_HOLD, f"confidence {signal.confidence:.0f} < {settings.min_confidence:.0f}"
-        )
+    if not signal.passed:
+        return Decision(ACTION_HOLD, signal.result.rationale or "confluence not met")
 
-    if signal.direction == BULLISH:
+    if signal.is_long:
         if holding and holding.side == LONG:
             return Decision(ACTION_HOLD, "already long")
         if holding and holding.side == SHORT:
-            return Decision(ACTION_CLOSE, "bullish signal vs short — cover")
+            return Decision(ACTION_CLOSE, "long signal vs short — close first")
         if open_count >= settings.max_open_positions:
             return Decision(ACTION_HOLD, "max open positions reached")
-        return Decision(ACTION_BUY, "bullish + fresh news + high confidence")
+        return Decision(ACTION_BUY, "long confluence passed")
 
-    # bearish
+    # short signal
+    if not settings.allow_short:
+        if holding and holding.side == LONG:
+            return Decision(ACTION_CLOSE, "short signal — exit long")
+        return Decision(ACTION_HOLD, "short signal but shorting disabled")
+    if holding and holding.side == SHORT:
+        return Decision(ACTION_HOLD, "already short")
     if holding and holding.side == LONG:
-        return Decision(ACTION_CLOSE, "bearish signal — exit long")
-    if settings.allow_short:
-        if holding and holding.side == SHORT:
-            return Decision(ACTION_HOLD, "already short")
-        if open_count >= settings.max_open_positions:
-            return Decision(ACTION_HOLD, "max open positions reached")
-        return Decision(ACTION_SHORT, "bearish + fresh news + high confidence")
-    return Decision(ACTION_HOLD, "bearish, nothing to close (shorting disabled)")
+        return Decision(ACTION_CLOSE, "short signal vs long — close first")
+    if open_count >= settings.max_open_positions:
+        return Decision(ACTION_HOLD, "max open positions reached")
+    return Decision(ACTION_SHORT, "short confluence passed")
 
 
-def size_notional(account: Account, confidence: float, settings=None) -> float:
-    """Target dollar size for a new position, after risk caps and cash buffer."""
+def size_by_risk(account: Account, signal: StrategySignal, settings=None) -> float:
+    """Notional sized so the structure stop risks ``risk_per_trade_pct`` of equity.
+
+    qty = risk_amount / stop_distance  ->  notional = qty * entry. Capped by the
+    per-position notional limit (max_position_pct * leverage) and deployable
+    margin (cash * leverage * (1 - buffer)).
+    """
     settings = settings or get_settings()
-    size = account.equity * settings.max_position_pct
-    if settings.scale_size_by_confidence:
-        size *= confidence / 100.0
-    deployable = account.cash * (1.0 - settings.cash_buffer_pct)
-    return max(0.0, min(size, deployable))
+    entry, stop = signal.price, signal.stop_price
+    if not entry or stop is None:
+        return 0.0
+    stop_dist = abs(entry - stop)
+    if stop_dist <= 0:
+        return 0.0
+    leverage = max(1, getattr(settings, "futures_leverage", 1))
+    risk_amount = account.equity * settings.risk_per_trade_pct
+    notional = risk_amount * entry / stop_dist
+    notional_cap = account.equity * settings.max_position_pct * leverage
+    deployable = account.cash * leverage * (1.0 - settings.cash_buffer_pct)
+    return max(0.0, min(notional, notional_cap, deployable))
 
 
 # --------------------------------------------------------------------------- #
 # Main entry points
 # --------------------------------------------------------------------------- #
-def run_trading(session: Session, broker: Broker | None = None, provider=None,
-                dry_run: bool = False) -> dict:
+def run_trading(session: Session, broker: Broker | None = None, dry_run: bool = False,
+                signals: list[StrategySignal] | None = None) -> dict:
     settings = get_settings()
     broker = broker or get_broker()
 
-    signals = generate_signals(session, provider=provider)
+    signals = generate_signals(session) if signals is None else signals
     account = broker.get_account()
     positions = broker.get_positions()
     open_count = len(positions)
-    market_open = broker.is_market_open()
     pending = {s for s in (_config_symbol(o.symbol) for o in broker.list_open_orders()) if s}
 
     summary: dict = {
@@ -151,7 +159,6 @@ def run_trading(session: Session, broker: Broker | None = None, provider=None,
         "equity": account.equity,
         "cash": account.cash,
         "signals": len(signals),
-        "market_open": market_open,
         "actions": [],
     }
 
@@ -163,13 +170,13 @@ def run_trading(session: Session, broker: Broker | None = None, provider=None,
             _record_action(summary, sig, Decision(ACTION_HOLD, "pending order exists"))
             continue
 
-        decision = decide(sig, holding, open_count, market_open, settings)
+        decision = decide(sig, holding, open_count, settings)
 
         notional = None
         if decision.action in (ACTION_BUY, ACTION_SHORT):
-            notional = size_notional(account, sig.confidence, settings)
+            notional = size_by_risk(account, sig, settings)
             if notional < MIN_NOTIONAL:
-                decision = Decision(ACTION_HOLD, "insufficient cash / buffer")
+                decision = Decision(ACTION_HOLD, "insufficient margin / buffer")
 
         entry = _record_action(summary, sig, decision, notional)
         if dry_run or decision.action == ACTION_HOLD:
@@ -205,7 +212,6 @@ def run_trading(session: Session, broker: Broker | None = None, provider=None,
 def run_sync(session: Session, broker: Broker | None = None) -> dict:
     """Reconcile open trades with the broker, apply stop/take exits, record equity,
     and score matured signals."""
-    settings = get_settings()
     broker = broker or get_broker()
 
     account = broker.get_account()
@@ -251,10 +257,13 @@ def run_sync(session: Session, broker: Broker | None = None) -> dict:
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def _open_trade(session: Session, sig: Signal, side: str, notional: float | None,
+def _open_trade(session: Session, sig: StrategySignal, side: str, notional: float | None,
                 order, settings) -> Trade:
     entry_price = order.filled_avg_price or sig.price  # refined later in sync
-    stop_price, take_profit = _risk_exits(side, entry_price, settings)
+    stop_price = sig.stop_price
+    take_profit = sig.target_price
+    if stop_price is None:  # strategy should always provide one; fall back just in case
+        stop_price, take_profit = _risk_exits(side, entry_price, settings)
     trade = Trade(
         asset=sig.asset.symbol,
         side=side,
@@ -303,6 +312,7 @@ def _close_trade(session: Session, symbol: str, exit_price: float | None, reason
 
 
 def _risk_exits(side: str, entry_price: float, settings) -> tuple[float | None, float | None]:
+    """Fallback fixed-pct exits (only used if the strategy supplied no levels)."""
     if not entry_price:
         return None, None
     slp, tpp = settings.stop_loss_pct, settings.take_profit_pct
@@ -340,13 +350,14 @@ def _record_equity(session: Session, account: Account) -> EquitySnapshot:
     return snap
 
 
-def _record_action(summary: dict, sig: Signal, decision: Decision,
+def _record_action(summary: dict, sig: StrategySignal, decision: Decision,
                    notional: float | None = None) -> dict:
+    res = sig.result
     entry = {
         "asset": sig.asset.symbol,
-        "direction": sig.direction,
-        "confidence": sig.confidence,
-        "fresh_news": sig.has_fresh_news,
+        "direction": res.direction,
+        "score": f"{res.score}/{res.max_score}",
+        "passed": res.passed,
         "action": decision.action,
         "reason": decision.reason,
         "notional": round(notional, 2) if notional else None,
@@ -354,8 +365,8 @@ def _record_action(summary: dict, sig: Signal, decision: Decision,
     }
     summary["actions"].append(entry)
     logger.info(
-        "%s: %s (%s) — dir=%s conf=%.0f fresh=%s",
+        "%s: %s (%s) — %s score=%s/%s passed=%s",
         sig.asset.symbol, decision.action, decision.reason,
-        sig.direction, sig.confidence, sig.has_fresh_news,
+        res.direction, res.score, res.max_score, res.passed,
     )
     return entry

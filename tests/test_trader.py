@@ -1,24 +1,23 @@
-import time
-
-import app.engine.predictor as predictor_mod
 import app.engine.trader as trader_mod
 from app.broker.base import Account
 from app.config import Asset, Settings
-from app.engine.predictor import Signal
+from app.engine.strategy.confluence import LONG, SHORT, ConfluenceResult
+from app.engine.strategy.engine import StrategySignal
 from app.engine.trader import (
     ACTION_BUY,
     ACTION_CLOSE,
     ACTION_HOLD,
+    ACTION_SHORT,
     decide,
     run_sync,
     run_trading,
-    size_notional,
+    size_by_risk,
 )
-from app.llm.base import LLMProvider, PredictionResult
 from app.models import (
     BEARISH,
     BULLISH,
     SIDE_BUY,
+    SIDE_SELL,
     TRADE_CLOSED,
     TRADE_OPEN,
     TRADE_SUBMITTED,
@@ -26,206 +25,170 @@ from app.models import (
     Prediction,
     Trade,
 )
-from app.sources.news import NewsItem
-from tests.conftest import FakeBroker, long_position
+from tests.conftest import FakeBroker, long_position, short_position
 
-AAPL = Asset("AAPL", "Apple", "stock")
-BTC = Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin")
+BTC = Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin", binance_symbol="BTCUSDT")
 
 
-class StubProvider(LLMProvider):
-    def __init__(self, bullish=80.0, bearish=20.0):
-        self.bullish, self.bearish = bullish, bearish
-
-    def available_models(self):
-        return ["stub-model"]
-
-    def predict(self, model, asset, news):
-        return PredictionResult(self.bullish, self.bearish, "why")
-
-
-def _fresh():
-    return [NewsItem("h", "s", "src", "u", int(time.time()))]
-
-
-def _stub_signals(monkeypatch, assets, *, price=100.0, news=None):
-    monkeypatch.setattr(predictor_mod, "ASSETS", assets)
-    monkeypatch.setattr(predictor_mod, "fetch_price", lambda asset: price)
-    monkeypatch.setattr(
-        predictor_mod, "fetch_news",
-        lambda asset: _fresh() if news is None else news,
-    )
-
-
-def make_signal(direction, conf=80.0, fresh=True, asset=AAPL):
-    bull, bear = (conf, 100 - conf) if direction == BULLISH else (100 - conf, conf)
-    pred = Prediction(
-        asset=asset.symbol, model="m", direction=direction,
-        bullish_prob=bull, bearish_prob=bear, price_at_prediction=100.0,
-        rationale="", news_snapshot="[]",
-    )
-    return Signal(asset=asset, prediction=pred, has_fresh_news=fresh, news=[])
+def make_signal(direction=LONG, *, passed=True, price=100.0, stop=None, target=None,
+                asset=BTC, score=5, max_score=6, db=None):
+    if direction == LONG:
+        stop = 95.0 if stop is None else stop
+        target = 110.0 if target is None else target
+        bull, bear, pdir = score / max_score * 100, 0.0, BULLISH
+    else:
+        stop = 105.0 if stop is None else stop
+        target = 90.0 if target is None else target
+        bull, bear, pdir = 0.0, score / max_score * 100, BEARISH
+    res = ConfluenceResult(direction=direction, passed=passed, score=score, max_score=max_score,
+                           checks={}, stop_price=stop, target_price=target, rationale="setup")
+    pred = Prediction(asset=asset.symbol, model="orderflow-v1", direction=pdir,
+                      bullish_prob=bull, bearish_prob=bear, price_at_prediction=price,
+                      rationale="setup", news_snapshot="{}")
+    if db is not None:
+        db.add(pred)
+        db.flush()
+    return StrategySignal(asset=asset, prediction=pred, result=res)
 
 
 # --------------------------------------------------------------------------- #
 # decide() — pure decision logic
 # --------------------------------------------------------------------------- #
-def test_decide_buys_on_bullish_fresh_high_confidence():
-    d = decide(make_signal(BULLISH, 80), None, 0, True, Settings())
-    assert d.action == ACTION_BUY
+def test_decide_buys_on_passing_long():
+    assert decide(make_signal(LONG), None, 0, Settings()).action == ACTION_BUY
 
 
-def test_decide_holds_without_fresh_news():
-    d = decide(make_signal(BULLISH, 90, fresh=False), None, 0, True, Settings())
-    assert d.action == ACTION_HOLD and "fresh" in d.reason
-
-
-def test_decide_holds_on_low_confidence():
-    d = decide(make_signal(BULLISH, 55), None, 0, True, Settings())
-    assert d.action == ACTION_HOLD and "confidence" in d.reason
-
-
-def test_decide_holds_stock_when_market_closed():
-    d = decide(make_signal(BULLISH, 80), None, 0, False, Settings())
-    assert d.action == ACTION_HOLD and "market" in d.reason
-
-
-def test_decide_holds_when_already_long():
-    holding = long_position("AAPL", 10, 90)
-    d = decide(make_signal(BULLISH, 80), holding, 1, True, Settings())
-    assert d.action == ACTION_HOLD and "already long" in d.reason
-
-
-def test_decide_closes_long_on_bearish():
-    holding = long_position("AAPL", 10, 90)
-    d = decide(make_signal(BEARISH, 80), holding, 1, True, Settings())
-    assert d.action == ACTION_CLOSE
-
-
-def test_decide_holds_bearish_without_position_when_no_short():
-    d = decide(make_signal(BEARISH, 80), None, 0, True, Settings(allow_short=False))
+def test_decide_holds_when_confluence_fails():
+    d = decide(make_signal(LONG, passed=False), None, 0, Settings())
     assert d.action == ACTION_HOLD
 
 
+def test_decide_shorts_on_passing_short_when_enabled():
+    d = decide(make_signal(SHORT), None, 0, Settings(allow_short=True))
+    assert d.action == ACTION_SHORT
+
+
+def test_decide_short_disabled_holds_when_flat():
+    d = decide(make_signal(SHORT), None, 0, Settings(allow_short=False))
+    assert d.action == ACTION_HOLD
+
+
+def test_decide_short_signal_closes_existing_long():
+    holding = long_position("BTC", 1, 100)
+    d = decide(make_signal(SHORT), holding, 1, Settings(allow_short=True))
+    assert d.action == ACTION_CLOSE
+
+
+def test_decide_long_signal_closes_existing_short():
+    holding = short_position("BTC", 1, 100)
+    d = decide(make_signal(LONG), holding, 1, Settings())
+    assert d.action == ACTION_CLOSE
+
+
+def test_decide_holds_when_already_long():
+    holding = long_position("BTC", 1, 100)
+    d = decide(make_signal(LONG), holding, 1, Settings())
+    assert d.action == ACTION_HOLD and "already long" in d.reason
+
+
 def test_decide_respects_max_open_positions():
-    d = decide(make_signal(BULLISH, 80), None, 5, True, Settings(max_open_positions=5))
+    d = decide(make_signal(LONG), None, 5, Settings(max_open_positions=5))
     assert d.action == ACTION_HOLD and "max open" in d.reason
 
 
-def test_decide_crypto_ignores_market_hours():
-    d = decide(make_signal(BULLISH, 80, asset=BTC), None, 0, False, Settings())
-    assert d.action == ACTION_BUY
-
-
 # --------------------------------------------------------------------------- #
-# size_notional()
+# size_by_risk()
 # --------------------------------------------------------------------------- #
-def test_size_notional_uses_position_pct():
+def test_size_by_risk_from_stop_distance():
     acct = Account(equity=10_000, cash=10_000, buying_power=10_000)
-    assert size_notional(acct, 80, Settings(max_position_pct=0.10)) == 1_000
+    sig = make_signal(LONG, price=100, stop=95)  # risk 0.5% = $50, stop dist 5 -> $1000
+    s = Settings(risk_per_trade_pct=0.005, max_position_pct=0.10, futures_leverage=3)
+    assert size_by_risk(acct, sig, s) == 1_000.0
 
 
-def test_size_notional_capped_by_cash_buffer():
-    acct = Account(equity=10_000, cash=500, buying_power=10_000)
-    # target 1000 but only 500*(1-0.1)=450 deployable
-    assert size_notional(acct, 80, Settings(max_position_pct=0.10)) == 450
-
-
-def test_size_notional_scales_by_confidence():
+def test_size_by_risk_capped_by_position_limit():
     acct = Account(equity=10_000, cash=10_000, buying_power=10_000)
-    s = Settings(max_position_pct=0.10, scale_size_by_confidence=True)
-    assert size_notional(acct, 80, s) == 800
+    sig = make_signal(LONG, price=100, stop=99.9)  # tiny stop -> huge desired notional
+    s = Settings(risk_per_trade_pct=0.005, max_position_pct=0.10, futures_leverage=3)
+    assert size_by_risk(acct, sig, s) == 3_000.0  # equity*0.10*3
+
+
+def test_size_by_risk_capped_by_margin_buffer():
+    acct = Account(equity=10_000, cash=100, buying_power=100)
+    sig = make_signal(LONG, price=100, stop=95)
+    s = Settings(risk_per_trade_pct=0.005, max_position_pct=0.10,
+                 cash_buffer_pct=0.10, futures_leverage=3)
+    assert size_by_risk(acct, sig, s) == 270.0  # cash*3*(1-0.10)
 
 
 # --------------------------------------------------------------------------- #
-# run_trading() — end to end with a fake broker
+# run_trading() — end to end with a fake broker (signals injected, no network)
 # --------------------------------------------------------------------------- #
-def test_run_trading_opens_long(db, monkeypatch):
-    _stub_signals(monkeypatch, [AAPL])
+def test_run_trading_opens_long(db):
     broker = FakeBroker(equity=10_000, cash=10_000)
+    sig = make_signal(LONG, price=100, stop=95, target=110, db=db)
 
-    summary = run_trading(db, broker=broker, provider=StubProvider(80, 20))
+    summary = run_trading(db, broker=broker, signals=[sig])
 
-    assert broker.submitted == [("AAPL", "buy", 1_000.0, None)]
-    trades = db.query(Trade).all()
-    assert len(trades) == 1
-    t = trades[0]
+    assert broker.submitted == [("BTC", "buy", 1_000.0, None)]
+    t = db.query(Trade).one()
     assert t.side == SIDE_BUY and t.status == TRADE_SUBMITTED
     assert t.notional == 1_000.0 and t.entry_price == 100.0
-    assert t.model == "stub-model" and t.prediction_id is not None
+    assert t.stop_price == 95.0 and t.take_profit == 110.0
+    assert t.model == "orderflow-v1" and t.prediction_id is not None
     assert db.query(EquitySnapshot).count() == 1
     assert summary["actions"][0]["action"] == ACTION_BUY
 
 
-def test_run_trading_holds_without_fresh_news(db, monkeypatch):
-    _stub_signals(monkeypatch, [AAPL], news=[])  # no news at all
+def test_run_trading_opens_short(db):
+    broker = FakeBroker(equity=10_000, cash=10_000)
+    sig = make_signal(SHORT, price=100, stop=105, target=90, db=db)
+
+    run_trading(db, broker=broker, signals=[sig])
+
+    assert broker.submitted == [("BTC", "sell", 1_000.0, None)]
+    t = db.query(Trade).one()
+    assert t.side == SIDE_SELL and t.stop_price == 105.0 and t.take_profit == 90.0
+
+
+def test_run_trading_holds_when_not_passed(db):
     broker = FakeBroker()
-
-    run_trading(db, broker=broker, provider=StubProvider(90, 10))
-
+    run_trading(db, broker=broker, signals=[make_signal(LONG, passed=False, db=db)])
     assert broker.submitted == []
     assert db.query(Trade).count() == 0
 
 
-def test_run_trading_holds_on_low_confidence(db, monkeypatch):
-    _stub_signals(monkeypatch, [AAPL])
-    broker = FakeBroker()
-
-    run_trading(db, broker=broker, provider=StubProvider(55, 45))
-
-    assert broker.submitted == []
-    assert db.query(Trade).count() == 0
-
-
-def test_run_trading_closes_long_on_bearish(db, monkeypatch):
-    _stub_signals(monkeypatch, [AAPL])
-    db.add(Trade(asset="AAPL", side=SIDE_BUY, status=TRADE_OPEN,
-                 entry_price=90.0, qty=10.0, model="m"))
+def test_run_trading_closes_long_on_short_signal(db):
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_OPEN,
+                 entry_price=90.0, qty=10.0, model="orderflow-v1"))
     db.commit()
-    broker = FakeBroker(positions=[long_position("AAPL", 10, 90)])
+    broker = FakeBroker(positions=[long_position("BTC", 10, 90)])
 
-    run_trading(db, broker=broker, provider=StubProvider(20, 80))
+    run_trading(db, broker=broker, signals=[make_signal(SHORT, price=100, db=db)])
 
-    assert broker.closed == ["AAPL"]
+    assert broker.closed == ["BTC"]
     t = db.query(Trade).filter_by(status=TRADE_CLOSED).one()
-    assert t.exit_price == 100.0
-    assert t.pnl == 100.0          # (100-90)*10
-    assert t.pnl_pct == 11.11
+    assert t.exit_price == 100.0 and t.pnl == 100.0  # (100-90)*10
     assert t.close_reason == "signal"
 
 
-def test_run_trading_dry_run_places_nothing(db, monkeypatch):
-    _stub_signals(monkeypatch, [AAPL])
+def test_run_trading_dry_run_places_nothing(db):
     broker = FakeBroker()
+    summary = run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)], dry_run=True)
 
-    summary = run_trading(db, broker=broker, provider=StubProvider(80, 20), dry_run=True)
-
-    assert broker.submitted == []
-    assert db.query(Trade).count() == 0
-    assert db.query(EquitySnapshot).count() == 0  # dry run writes no equity
+    assert broker.submitted == [] and db.query(Trade).count() == 0
+    assert db.query(EquitySnapshot).count() == 0
     assert summary["dry_run"] is True
-    assert summary["actions"][0]["action"] == ACTION_BUY  # but only "intended"
+    assert summary["actions"][0]["action"] == ACTION_BUY  # intended only
 
 
-def test_run_trading_skips_when_pending_order(db, monkeypatch):
+def test_run_trading_skips_when_pending_order(db):
     from app.broker.base import OrderResult
 
-    _stub_signals(monkeypatch, [BTC])
     broker = FakeBroker(open_orders=[OrderResult(id="9", symbol="BTC", side="buy", status="new")])
+    run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)])
 
-    run_trading(db, broker=broker, provider=StubProvider(80, 20))
-
-    assert broker.submitted == []
-    assert db.query(Trade).count() == 0
-
-
-def test_run_trading_crypto_trades_when_market_closed(db, monkeypatch):
-    _stub_signals(monkeypatch, [BTC])
-    broker = FakeBroker(market_open=False)
-
-    run_trading(db, broker=broker, provider=StubProvider(80, 20))
-
-    assert broker.submitted and broker.submitted[0][0] == "BTC"
+    assert broker.submitted == [] and db.query(Trade).count() == 0
 
 
 # --------------------------------------------------------------------------- #
@@ -257,5 +220,19 @@ def test_run_sync_triggers_stop_loss(db, monkeypatch):
     assert broker.closed == ["BTC"]
     t = db.query(Trade).one()
     assert t.status == TRADE_CLOSED and t.close_reason == "stop_loss"
-    assert t.pnl == -100.0
+    assert t.pnl == -100.0 and summary["closed"] == 1
+
+
+def test_run_sync_triggers_take_profit_on_short(db, monkeypatch):
+    monkeypatch.setattr(trader_mod, "fetch_price", lambda asset: 90.0)  # below short target
+    db.add(Trade(asset="BTC", side=SIDE_SELL, status=TRADE_OPEN,
+                 entry_price=100.0, qty=10.0, stop_price=105.0, take_profit=92.0))
+    db.commit()
+    broker = FakeBroker(positions=[short_position("BTC", 10, 100)])
+
+    summary = run_sync(db, broker=broker)
+
+    assert broker.closed == ["BTC"]
+    t = db.query(Trade).one()
+    assert t.close_reason == "take_profit" and t.pnl == 100.0  # (100-90)*10 short
     assert summary["closed"] == 1
