@@ -64,15 +64,23 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""           # AI signal
 
     # --- Broker selection ---
-    # "binance" -> Binance Spot Testnet (no KYC, free, fake funds; default).
-    # "alpaca"  -> Alpaca paper/live (kept as an optional alternative).
-    broker: str = "binance"
+    # "binance_futures" -> Binance USD-M Futures Testnet (order-flow strategy; long+short).
+    # "binance"         -> Binance Spot Testnet (no KYC, free, fake funds).
+    # "alpaca"          -> Alpaca paper/live (kept as an optional alternative).
+    broker: str = "binance_futures"
 
-    # --- Broker: Binance (Spot Testnet by default) ---
+    # --- Broker: Binance Spot (Testnet by default) ---
     binance_api_key: str = ""
     binance_secret_key: str = ""
     # Default = testnet (fake funds, no KYC). Set false ONLY for real mainnet trading.
     binance_testnet: bool = True
+
+    # --- Broker: Binance USD-M Futures (Testnet by default) ---
+    # Separate signup from the spot testnet: https://testnet.binancefuture.com
+    binance_futures_api_key: str = ""
+    binance_futures_secret_key: str = ""
+    binance_futures_testnet: bool = True
+    futures_leverage: int = 3           # low leverage; structure stops sit inside liquidation
 
     # --- Broker: Alpaca (optional alternative) ---
     alpaca_api_key: str = ""
@@ -131,6 +139,12 @@ class Settings(BaseSettings):
     @property
     def has_binance(self) -> bool:
         return bool(self.binance_api_key.strip() and self.binance_secret_key.strip())
+
+    @property
+    def has_binance_futures(self) -> bool:
+        return bool(
+            self.binance_futures_api_key.strip() and self.binance_futures_secret_key.strip()
+        )
 
     @property
     def has_alpaca(self) -> bool:

@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401  register mappers
-from app.broker.base import LONG, Account, Broker, OrderResult, Position
+from app.broker.base import LONG, SHORT, Account, Broker, OrderResult, Position
 from app.db import Base
 
 
@@ -77,4 +77,10 @@ class FakeBroker(Broker):
 def long_position(symbol, qty, avg_entry_price, market_value=None):
     mv = market_value if market_value is not None else qty * avg_entry_price
     return Position(symbol=symbol, qty=qty, side=LONG, avg_entry_price=avg_entry_price,
+                    market_value=mv, unrealized_pl=0.0)
+
+
+def short_position(symbol, qty, avg_entry_price, market_value=None):
+    mv = market_value if market_value is not None else qty * avg_entry_price
+    return Position(symbol=symbol, qty=qty, side=SHORT, avg_entry_price=avg_entry_price,
                     market_value=mv, unrealized_pl=0.0)

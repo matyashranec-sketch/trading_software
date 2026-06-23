@@ -10,17 +10,23 @@ from app.broker.base import Account, Broker, OrderResult, Position
 
 
 def get_broker() -> Broker:
-    """Return the configured broker (``BROKER`` setting; Binance testnet by default)."""
+    """Return the configured broker (``BROKER`` setting; Binance futures by default)."""
     from app.config import get_settings
 
-    if get_settings().broker == "alpaca":
+    broker = get_settings().broker
+    if broker == "alpaca":
         from app.broker.alpaca import AlpacaBroker
 
         return AlpacaBroker()
 
-    from app.broker.binance import BinanceBroker
+    if broker == "binance":
+        from app.broker.binance import BinanceBroker
 
-    return BinanceBroker()
+        return BinanceBroker()
+
+    from app.broker.binance_futures import BinanceFuturesBroker
+
+    return BinanceFuturesBroker()
 
 
 __all__ = ["Account", "Broker", "OrderResult", "Position", "get_broker"]
