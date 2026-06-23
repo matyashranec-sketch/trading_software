@@ -1,109 +1,122 @@
-# 📈 News-Driven Trading Bot
+# 📈 Order-Flow Strategy Bot
 
-An AI reads fresh crypto news every ~2 hours and places **real trades on the
-[Binance Spot Testnet](https://testnet.binance.vision)** (fake funds, no KYC) —
-but only when there's fresh news *and* it's confident. Every trade, winner or
-loser, stays public on a dashboard together with the reasoning and the headlines
-that drove it.
+A deterministic trading bot that scores a strict **order-flow confluence checklist**
+every ~30 minutes and places **real trades on the
+[Binance USD-M Futures Testnet](https://testnet.binancefuture.com)** (fake funds, no
+KYC) — long **or** short — *only when enough conditions line up*. Every trade, winner
+or loser, stays public on a dashboard together with the exact checklist that drove it.
 
-> **Transparency is the point.** Nothing is ever deleted or hidden — losing
-> trades are as visible as winners. The credibility of the project depends on not
-> sweeping mistakes under the rug.
+> **Transparency is the point.** Nothing is ever deleted or hidden — losing trades are
+> as visible as winners. The credibility of the project depends on not sweeping mistakes
+> under the rug.
 
 ## How it works
 
 ```
-Fly.io · Frankfurt (every ~2h)  ──►  Python bot (app/)            ──►  Binance Testnet: orders, balances
-  app.cli run  (sync + trade)         news (Finnhub) + price (Binance)
-                                       Gemini signal + risk/sizing
+AWS EC2 · Frankfurt (every ~30m)  ──►  Python bot (app/)            ──►  Binance Futures Testnet
+  app.cli run  (sync + trade)         klines + order flow (CVD/delta)        orders, positions, equity
+                                       confluence → risk-sized order
                                               │ writes
                                               ▼
                                        Supabase (Postgres)  ◄── reads ──  React dashboard (Vercel)
-                                       trades / signals / equity          @supabase/supabase-js (anon, read-only)
 
-GitHub Actions only builds & deploys the bot to Fly (Binance blocks GitHub's US IPs → HTTP 451).
+The bot runs in the EU because Binance blocks US IPs (HTTP 451).
 ```
 
-Each run: fetch news → ask Gemini for a bullish/bearish call with confidence →
-**trade only if** the news is fresh (≤ `news_fresh_hours`) **and** confidence ≥
-`min_confidence`. Otherwise it holds. Crypto trades 24/7. Positions are sized as a
-fraction of equity, capped, and kept within a cash buffer.
+Each run, for every asset, it builds a multi-timeframe picture and checks a strict
+checklist — and **only trades when enough of it passes**:
+
+1. **Trend** — higher-timeframe direction (4h/1d); trade only with it.
+2. **Location** — price at value (POC / VWAP / value area), not mid-range chop.
+3. **Liquidity sweep** — a stop-run beyond a prior swing that gets reclaimed.
+4. **Order flow** — CVD/delta confirmation (cumulative volume delta divergence or a
+   strong aggressive-buy/sell push). *This is the heart of the strategy.*
+5. **Break of structure** — the reversal is confirmed on the lower timeframe.
+6. **Risk** — sane ATR volatility, price not over-extended from the trend.
+7. **Funding** — not crowding the side we're taking (futures).
+
+Stops are placed at structure (beyond the swept level / ATR), targets at an R-multiple,
+and each trade risks a fixed fraction of equity. It shorts as readily as it goes long.
+
+## Validate before trusting it — backtest
+The live decision and the backtest call the **same** confluence code, so you can test it
+on history first:
+```bash
+python -m app.cli backtest --asset BTC --days 365      # win rate, profit factor, R, drawdown
+```
+Reports land in `data/backtests/`. Only deploy a parameter set whose backtest is positive
+after fees. (Run it from an EU IP — Binance returns 451 in the US.)
 
 ## Tracked assets
-BTC · ETH · SOL · BNB · XRP (traded vs USDT). Edit `ASSETS` in `app/config.py`.
+BTC · ETH · SOL · BNB · XRP (perps vs USDT). Edit `ASSETS` in `app/config.py`.
 
-## Quick start (local)
+## Quick start (local, EU IP)
 ```bash
 pip install -r requirements.txt
-cp .env.example .env          # fill in the keys below (all free, no KYC)
+cp .env.example .env          # fill in the futures testnet keys (free, no KYC)
 python -m app.cli initdb      # create tables (SQLite by default)
+python -m app.cli backtest --asset BTC --days 180   # sanity-check the edge
 python -m app.cli trade --dry-run   # see what it WOULD do, places nothing
-python -m app.cli trade       # place testnet trades
+python -m app.cli trade       # place testnet futures trades
 pytest                        # run the test suite
 ```
 
-Keys (all free, no credit card, no identity verification):
-- `GEMINI_API_KEY` — https://aistudio.google.com/app/apikey
-- `FINNHUB_API_KEY` — https://finnhub.io
-- `BINANCE_API_KEY` / `BINANCE_SECRET_KEY` — https://testnet.binance.vision
-  (log in with GitHub → *Generate HMAC_SHA256 Key*)
+Keys (free, no credit card, no identity verification):
+- `BINANCE_FUTURES_API_KEY` / `BINANCE_FUTURES_SECRET_KEY` —
+  https://testnet.binancefuture.com (log in → API key; pre-funded fake balance).
+- `DATABASE_URL` — Supabase Postgres (Session pooler URI) for production; omit for local SQLite.
+- *(optional)* `GEMINI_API_KEY` / `FINNHUB_API_KEY` — only for the legacy news
+  accuracy leaderboard (`app.cli predict`), not the trading path.
 
 ## Deploy (free stack)
-1. **Binance Testnet** — log in at testnet.binance.vision, generate API keys
-   (fake balances are pre-funded; no KYC).
-2. **Supabase** — create a project, open the SQL editor and run
-   [`supabase/schema.sql`](supabase/schema.sql) (creates tables + read-only RLS).
-   Copy the **Session pooler** Postgres connection string and the public anon key.
-3. **GitHub secrets** — add `GEMINI_API_KEY`, `FINNHUB_API_KEY`,
-   `BINANCE_API_KEY`, `BINANCE_SECRET_KEY`, `DATABASE_URL` (Supabase pooler string),
-   plus `FLY_API_TOKEN` (next step). The deploy workflow pushes these to Fly.
-4. **Fly.io** (runs the bot in the EU, where Binance is reachable) — create a free
-   account, then a deploy token (*Tokens → Create deploy token*) and add it as the
-   GitHub secret `FLY_API_TOKEN`. The workflow
-   [`.github/workflows/fly-deploy.yml`](.github/workflows/fly-deploy.yml) creates the
-   app (`fra` / Frankfurt), pushes the secrets, and deploys on every push to `main`
-   (and via *Run workflow*). The bot then runs `sync + trade` every ~2h on Fly.
-   App name lives in [`fly.toml`](fly.toml) — change it if Fly says it's taken.
-5. **Vercel** — import the repo, set **Root Directory** to `web`, add env vars
-   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, deploy. See [`web/README.md`](web/README.md).
+1. **Binance Futures Testnet** — log in at testnet.binancefuture.com, create API keys.
+2. **Supabase** — create a project, run [`supabase/schema.sql`](supabase/schema.sql) in the
+   SQL editor (tables + read-only RLS). Copy the **Session pooler** connection string and anon key.
+3. **Bot host (EU)** — run the bot where Binance is reachable (e.g. an EC2 box in Frankfurt)
+   as a systemd service running `python -m app.cli run`. Deploy updates with
+   `git pull && sudo systemctl restart tradingbot`.
+4. **Vercel** — import the repo, set **Root Directory** to `web`, add `VITE_SUPABASE_URL`
+   and `VITE_SUPABASE_ANON_KEY`, deploy. Auto-deploys from `main`. See [`web/README.md`](web/README.md).
 
-## Strategy & risk (all in `app/config.py`)
+## Strategy & risk (all in `app/config.py`, overridable via env)
 | Setting | Default | Meaning |
 |---|---|---|
-| `min_confidence` | 75 | trade only when the model is at least this sure |
-| `require_fresh_news` / `news_fresh_hours` | true / 24 | only act on recent news |
-| `max_position_pct` | 0.10 | target size per position (of equity) |
+| `strategy_htf` / `mtf` / `ltf` | 4h / 1h / 15m | trend / structure / decision timeframes |
+| `min_confluence` | 5 | how many checklist items must pass (raise it = stricter) |
+| `strategy_reward_risk` | 2.0 | take-profit at this R multiple of the stop |
+| `risk_per_trade_pct` | 0.005 | risk ~0.5% of equity per trade |
+| `max_position_pct` | 0.10 | per-position notional cap (× leverage) of equity |
 | `max_open_positions` | 5 | concurrent position cap |
-| `cash_buffer_pct` | 0.10 | never deploy this fraction of cash |
-| `stop_loss_pct` / `take_profit_pct` | 0 / 0 | optional hard exits (0 = off) |
+| `cash_buffer_pct` | 0.10 | never deploy this fraction of margin |
+| `futures_leverage` | 3 | low leverage; structure stops sit inside liquidation |
+| `allow_short` | true | take shorts as well as longs |
 
-Override any of them via environment variables (e.g. `MIN_CONFIDENCE=80`).
-
-On the **free Gemini tier** the bot retries transient `429` (rate limit) and
-`503` (overloaded) errors with exponential backoff, spaces calls out, and caches
-the model list, so a burst of per-asset requests stays reliable on a single key
-(`gemini_max_retries`, `llm_min_interval_seconds`, … in `app/config.py`).
+> **Honest note:** microstructure edges are thin and don't always beat fees. The backtest
+> is the gate, and the testnet validates the *process*, not a guaranteed profit. Order-book
+> imbalance and live funding can't be backtested (no historical L2) — they're live-only filters.
 
 ## Safety: testnet → real money
-The bot trades on the **Binance Spot Testnet by default** (`BINANCE_TESTNET=true`)
-— fake funds, zero real risk. Trading real money is a deliberate switch: set
-`BINANCE_TESTNET=false` and use mainnet keys. (An Alpaca stock broker is also
-included as an alternative — set `BROKER=alpaca`.)
+The bot trades on the **Futures Testnet by default** (`BINANCE_FUTURES_TESTNET=true`) —
+fake funds, zero real risk. Trading real money is a deliberate switch: set it to `false`
+and use mainnet keys. Spot (`BROKER=binance`) and Alpaca (`BROKER=alpaca`) brokers remain
+as alternatives.
 
 ## Project layout
 ```
 app/
-  config.py      # assets, models, trading risk, settings
+  config.py      # assets, strategy params, risk, settings
   models.py      # DB models: Prediction/Evaluation (signals) + Trade/EquitySnapshot
-  sources/       # Binance/CoinGecko prices, Finnhub news (coin-filtered)
-  llm/           # pluggable AI provider (Gemini)
-  broker/        # Binance (testnet) + Alpaca, behind a common Broker interface
-  engine/        # predictor (signals), trader (orders), evaluator, scoreboard
-  cli.py         # `trade`, `sync`, `predict`, `initdb`, `run`
-  scheduler.py   # optional local loop (production uses GitHub Actions)
+  sources/       # market_data (klines/depth/funding + CVD), prices, news
+  engine/
+    strategy/    # features, confluence (single source of truth), engine (live signals)
+    backtest.py  # historical validation (same confluence code, no lookahead)
+    trader.py    # confluence -> risk-sized long/short orders
+    evaluator.py # scores matured signals
+  broker/        # binance_futures + binance (spot) + alpaca, behind a Broker interface
+  llm/           # pluggable AI provider (legacy leaderboard only)
+  cli.py         # `trade`, `sync`, `backtest`, `initdb`, `run`, `predict`
 web/             # React + Vite dashboard (deployed to Vercel)
 supabase/        # schema.sql (tables + RLS)
-.github/workflows/bot.yml   # the 2-hourly heartbeat
 ```
 Architecture & conventions: [claude.md](claude.md).
 ```bash

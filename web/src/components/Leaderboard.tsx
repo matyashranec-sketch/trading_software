@@ -28,9 +28,9 @@ export default function Leaderboard({ predictions }: { predictions: Prediction[]
   return (
     <div className="stack">
       <Card className="panel">
-        <div className="panel-head"><h2>Model accuracy — is the AI any good?</h2></div>
+        <div className="panel-head"><h2>Signal accuracy — is the strategy any good?</h2></div>
         <p className="sub">
-          Every signal is scored against the real price after 24h and 7d. Pushes (no move) are excluded.
+          Every order-flow signal is scored against the real price after 24h and 7d. Pushes (no move) are excluded.
         </p>
         <AccuracyBars predictions={predictions} />
       </Card>
@@ -52,7 +52,7 @@ export default function Leaderboard({ predictions }: { predictions: Prediction[]
                   <tr key={p.id}>
                     <td className="muted">{dateTime(p.created_at)}</td>
                     <td><AssetBadge symbol={p.asset} /></td>
-                    <td><Pill kind={p.direction}>{p.direction}</Pill></td>
+                    <td><Pill kind={p.direction}>{p.direction === "bullish" ? "long" : "short"}</Pill></td>
                     <td style={{ minWidth: 150 }}><ConfidenceBar value={conf} direction={p.direction} /></td>
                     <td className="num"><Outcome ev={evalFor(p, "24h")} /></td>
                     <td className="num"><Outcome ev={evalFor(p, "7d")} /></td>
