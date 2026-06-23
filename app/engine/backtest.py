@@ -87,8 +87,14 @@ def _closed_slice(candles: list[Candle], close_times: list[int], t: int,
 
 def simulate(htf: list[Candle], mtf: list[Candle], ltf: list[Candle],
              params: StrategyParams | None = None,
-             cfg: BacktestConfig | None = None) -> BacktestReport:
-    """Core event loop over already-fetched candles (network-free → testable)."""
+             cfg: BacktestConfig | None = None,
+             entry_range: tuple[int, int] | None = None) -> BacktestReport:
+    """Core event loop over already-fetched candles (network-free → testable).
+
+    ``entry_range`` restricts *new entries* to LTF indices ``[start, end)`` (used
+    by the optimizer for train/test splits); positions are always managed over the
+    full series.
+    """
     p = params or StrategyParams()
     cfg = cfg or BacktestConfig()
     htf_ct = [c.close_time for c in htf]
@@ -120,8 +126,8 @@ def simulate(htf: list[Candle], mtf: list[Candle], ltf: list[Candle],
                 peak = max(peak, equity)
                 max_dd = max(max_dd, (peak - equity) / peak if peak else 0.0)
 
-        # --- look for a new entry (only when flat) ---
-        if open_t is None:
+        # --- look for a new entry (only when flat, within the allowed range) ---
+        if open_t is None and (entry_range is None or entry_range[0] <= i < entry_range[1]):
             snap = MarketSnapshot(
                 asset_symbol="BT", price=bar.close,
                 htf=_closed_slice(htf, htf_ct, bar.close_time, cfg.htf_window),

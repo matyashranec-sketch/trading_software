@@ -29,6 +29,7 @@ from app.config import ASSETS, Asset, get_settings
 from app.engine.evaluator import run_evaluations
 from app.engine.strategy.engine import StrategySignal, generate_signals
 from app.models import (
+    CLOSE_MAX_HOLD,
     CLOSE_SIGNAL,
     CLOSE_STOP_LOSS,
     CLOSE_TAKE_PROFIT,
@@ -41,6 +42,7 @@ from app.models import (
     Trade,
     utcnow,
 )
+from app.sources.market_data import interval_ms
 from app.sources.prices import PriceUnavailable, fetch_price
 
 logger = logging.getLogger(__name__)
@@ -210,13 +212,17 @@ def run_trading(session: Session, broker: Broker | None = None, dry_run: bool = 
 
 
 def run_sync(session: Session, broker: Broker | None = None) -> dict:
-    """Reconcile open trades with the broker, apply stop/take exits, record equity,
-    and score matured signals."""
+    """Reconcile open trades with the broker, apply stop/take/time exits, record
+    equity, and score matured signals."""
+    settings = get_settings()
     broker = broker or get_broker()
 
     account = broker.get_account()
     positions = broker.get_positions()
     summary: dict = {"reconciled": 0, "closed": 0, "equity": account.equity, "actions": []}
+
+    hold_ms = _max_hold_ms(settings)
+    now = utcnow()
 
     open_trades = session.scalars(
         select(Trade).where(Trade.status.in_([TRADE_SUBMITTED, TRADE_OPEN]))
@@ -241,6 +247,10 @@ def run_sync(session: Session, broker: Broker | None = None) -> dict:
         except PriceUnavailable:
             continue
         reason = _exit_reason(trade, price)
+        if not reason and hold_ms and trade.created_at is not None:
+            age_ms = (now - trade.created_at).total_seconds() * 1000
+            if age_ms >= hold_ms:
+                reason = CLOSE_MAX_HOLD
         if reason:
             broker.close_position(trade.asset)
             _close_trade(session, trade.asset, price, reason, pos)
@@ -337,6 +347,17 @@ def _exit_reason(trade: Trade, price: float) -> str | None:
         if trade.take_profit and price <= trade.take_profit:
             return CLOSE_TAKE_PROFIT
     return None
+
+
+def _max_hold_ms(settings) -> float:
+    """Live time-stop duration = max_hold_bars × the LTF interval (matches backtest)."""
+    bars = getattr(settings, "max_hold_bars", 0)
+    if not bars:
+        return 0.0
+    try:
+        return bars * interval_ms(getattr(settings, "strategy_ltf", "15m"))
+    except Exception:
+        return 0.0
 
 
 def _record_equity(session: Session, account: Account) -> EquitySnapshot:

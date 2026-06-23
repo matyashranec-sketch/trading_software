@@ -242,3 +242,24 @@ def vwap(candles: list[Candle]) -> float:
         num += tp * c.volume
         den += c.volume
     return num / den if den > 0 else candles[-1].close
+
+
+def delta_strength(candles: list[Candle], k: int) -> float:
+    """Net taker delta over the last ``k`` candles as a fraction of their volume.
+
+    In [-1, 1]: +1 = every contract over the window was an aggressive buy, -1 a
+    sell. A real "buyers in control" reading, unlike "last candle closed green".
+    """
+    window = candles[-k:] if 0 < k < len(candles) else candles
+    vol = sum(c.volume for c in window)
+    if vol <= 0:
+        return 0.0
+    return sum(c.delta for c in window) / vol
+
+
+def cvd_slope(cvd: list[float], k: int) -> float:
+    """Change in cumulative volume delta over the last ``k`` bars (sign = flow trend)."""
+    if not cvd:
+        return 0.0
+    ref = cvd[-1 - k] if len(cvd) > k else cvd[0]
+    return cvd[-1] - ref

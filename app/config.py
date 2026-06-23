@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     strategy_reward_risk: float = 2.0    # take-profit = entry +/- RR * risk
     strategy_atr_stop_mult: float = 1.5  # fallback stop distance when no sweep level
     strategy_funding_cap: float = 0.0005  # |funding| above this crowds that side
+    strategy_delta_strength_min: float = 0.15  # min |taker delta|/volume for order-flow check
+    strategy_delta_lookback: int = 3     # candles for the delta-strength read
+    strategy_cvd_lookback: int = 20      # bars for the CVD-slope read
+    max_hold_bars: int = 96              # force-exit a position after this many LTF bars
 
     # --- Position sizing / risk ---
     risk_per_trade_pct: float = 0.005   # risk this fraction of equity per trade (~0.5%)

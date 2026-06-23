@@ -46,6 +46,9 @@ class StrategyParams:
     atr_stop_mult: float = 1.5     # fallback stop distance when no sweep level
     funding_cap: float = 0.0005    # |funding| above this crowds that side
     min_confluence: int = 5        # how many checks must pass (strict)
+    delta_strength_min: float = 0.15  # min |taker delta| / volume for the order-flow check
+    delta_lookback: int = 3        # candles for the delta-strength read
+    cvd_lookback: int = 20         # bars for the CVD-slope read
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,12 +116,17 @@ def evaluate(snap: MarketSnapshot, params: StrategyParams | None = None) -> Conf
     last_ltf = ltf[-1]
     args = (p.swing_left, p.swing_right)
 
+    dstr = F.delta_strength(ltf, p.delta_lookback)
+    cslope = F.cvd_slope(mtf_cvd, p.cvd_lookback)
+    in_value = va.low <= price <= va.high   # trading at value, not extended
+
     checks: dict[str, bool] = {}
     feats: dict = {
         "structure": structure, "htf_ema": round(htf_ema, 6), "atr_pct": round(atr_pct, 5),
         "vwap": round(fair, 6), "poc": round(va.poc, 6),
         "value_low": round(va.low, 6), "value_high": round(va.high, 6),
-        "cvd": round(mtf_cvd[-1], 4), "ltf_delta": round(last_ltf.delta, 4),
+        "cvd": round(mtf_cvd[-1], 4), "cvd_slope": round(cslope, 4),
+        "delta_strength": round(dstr, 4),
         "funding": snap.funding_rate, "book_imbalance": snap.book_imbalance,
     }
 
@@ -129,16 +137,16 @@ def evaluate(snap: MarketSnapshot, params: StrategyParams | None = None) -> Conf
         and abs(price - htf_ema) <= p.overext_atr_mult * a
     )
     checks["risk"] = risk_ok
+    checks["location"] = in_value
 
     swept: F.Swing | None = None
     if direction == LONG:
         checks["trend"] = price > htf_ema
-        checks["location"] = price <= fair                       # at a discount to fair value
         swept = F.bullish_sweep(ltf, p.sweep_recent, *args)
         checks["sweep"] = swept is not None
-        checks["cvd"] = (
-            F.bullish_cvd_divergence(mtf, mtf_cvd, *args)
-            or (last_ltf.delta > 0 and last_ltf.is_bullish)
+        # real order flow: CVD divergence OR genuinely strong buy delta with rising CVD
+        checks["cvd"] = F.bullish_cvd_divergence(mtf, mtf_cvd, *args) or (
+            dstr >= p.delta_strength_min and cslope > 0
         )
         checks["bos"] = F.bullish_bos(ltf, *args)
         if snap.funding_rate is not None:
@@ -147,12 +155,10 @@ def evaluate(snap: MarketSnapshot, params: StrategyParams | None = None) -> Conf
             checks["obi"] = snap.book_imbalance > 0
     else:  # SHORT
         checks["trend"] = price < htf_ema
-        checks["location"] = price >= fair
         swept = F.bearish_sweep(ltf, p.sweep_recent, *args)
         checks["sweep"] = swept is not None
-        checks["cvd"] = (
-            F.bearish_cvd_divergence(mtf, mtf_cvd, *args)
-            or (last_ltf.delta < 0 and not last_ltf.is_bullish)
+        checks["cvd"] = F.bearish_cvd_divergence(mtf, mtf_cvd, *args) or (
+            dstr <= -p.delta_strength_min and cslope < 0
         )
         checks["bos"] = F.bearish_bos(ltf, *args)
         if snap.funding_rate is not None:
