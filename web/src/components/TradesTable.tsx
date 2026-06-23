@@ -1,19 +1,31 @@
 import { useState } from "react";
 import { dateTime, money, pct, signClass } from "../lib/format";
-import type { NewsItem, Trade } from "../types";
+import type { Trade } from "../types";
 import AssetBadge from "./ui/AssetBadge";
 import Card from "./ui/Card";
 import Pill from "./ui/Pill";
 
-function parseNews(json?: string | null): NewsItem[] {
-  if (!json) return [];
+interface Confluence {
+  passed: boolean;
+  direction: string;
+  score: number;
+  max_score: number;
+  checks: Record<string, boolean>;
+  stop: number | null;
+  target: number | null;
+}
+
+function parseConfluence(json?: string | null): Confluence | null {
+  if (!json) return null;
   try {
-    const arr = JSON.parse(json);
-    return Array.isArray(arr) ? arr : [];
+    const o = JSON.parse(json);
+    return o && typeof o === "object" && o.checks ? (o as Confluence) : null;
   } catch {
-    return [];
+    return null;
   }
 }
+
+const sideLabel = (side: string) => (side === "buy" ? "long" : "short");
 
 type Filter = "all" | "open" | "closed";
 const FILTERS: Filter[] = ["all", "open", "closed"];
@@ -44,7 +56,7 @@ export default function TradesTable({ trades }: { trades: Trade[] }) {
       {filtered.length === 0 ? (
         <p className="empty-note">
           {trades.length === 0
-            ? "No trades yet. The bot only trades on fresh news with high confidence — check back after a few cycles."
+            ? "No trades yet. The bot only fires when the order-flow confluence checklist passes — check back after a few cycles."
             : "No trades match this filter."}
         </p>
       ) : (
@@ -57,13 +69,13 @@ export default function TradesTable({ trades }: { trades: Trade[] }) {
             </div>
             {filtered.map((t) => {
               const expanded = openId === t.id;
-              const news = parseNews(t.prediction?.news_snapshot);
+              const conf = parseConfluence(t.prediction?.news_snapshot);
               return (
                 <div key={t.id} className="titem">
                   <div className="trow row-click" onClick={() => setOpenId(expanded ? null : t.id)}>
                     <span className="muted">{dateTime(t.created_at)}</span>
                     <span><AssetBadge symbol={t.asset} /></span>
-                    <span><Pill kind={t.side}>{t.side}</Pill></span>
+                    <span><Pill kind={t.side}>{sideLabel(t.side)}</Pill></span>
                     <span><Pill kind={t.status}>{t.status}</Pill></span>
                     <span className="num mono">{money(t.entry_price)}</span>
                     <span className="num mono">{money(t.exit_price)}</span>
@@ -75,25 +87,26 @@ export default function TradesTable({ trades }: { trades: Trade[] }) {
                       <div className="rationale">
                         <strong>Why{t.model ? ` (${t.model})` : ""}:</strong> {t.rationale || "—"}
                       </div>
-                      {t.close_reason && (
-                        <div className="muted" style={{ marginTop: 6 }}>Closed via: {t.close_reason}</div>
-                      )}
-                      {news.length > 0 && (
+                      {conf && (
                         <>
-                          <div className="muted" style={{ marginTop: 10 }}>News the signal was based on:</div>
-                          <ul className="news-list">
-                            {news.slice(0, 8).map((n, i) => (
-                              <li key={i}>
-                                {n.url ? (
-                                  <a href={n.url} target="_blank" rel="noreferrer">{n.headline}</a>
-                                ) : (
-                                  n.headline
-                                )}
-                                {n.source ? ` — ${n.source}` : ""}
-                              </li>
+                          <div className="muted" style={{ marginTop: 10 }}>
+                            Confluence checklist — {conf.score}/{conf.max_score} passed
+                          </div>
+                          <div className="checks">
+                            {Object.entries(conf.checks).map(([k, v]) => (
+                              <span key={k} className="check" style={{ color: v ? "var(--pos)" : "var(--neg)" }}>
+                                {v ? "✓" : "✗"} {k}
+                              </span>
                             ))}
-                          </ul>
+                          </div>
+                          <div className="muted" style={{ marginTop: 8 }}>
+                            Stop <span className="mono">{money(conf.stop)}</span>
+                            {" · "}Target <span className="mono">{money(conf.target)}</span>
+                          </div>
                         </>
+                      )}
+                      {t.close_reason && (
+                        <div className="muted" style={{ marginTop: 8 }}>Closed via: {t.close_reason}</div>
                       )}
                     </div>
                   )}

@@ -76,7 +76,7 @@ export default function Dashboard({ equity, trades }: { equity: EquitySnapshot[]
                 {open.map((t) => (
                   <tr key={t.id}>
                     <td><AssetBadge symbol={t.asset} /></td>
-                    <td><Pill kind={t.side}>{t.side}</Pill></td>
+                    <td><Pill kind={t.side}>{t.side === "buy" ? "long" : "short"}</Pill></td>
                     <td className="num mono">{num(t.qty, 4)}</td>
                     <td className="num mono">{money(t.entry_price)}</td>
                     <td className="num mono">{money(t.notional)}</td>
@@ -87,7 +87,7 @@ export default function Dashboard({ equity, trades }: { equity: EquitySnapshot[]
             </table>
           </div>
         ) : (
-          <p className="empty-note">No open positions right now — the bot is waiting for a high-confidence signal.</p>
+          <p className="empty-note">No open positions right now — the bot is waiting for a confluence setup.</p>
         )}
       </Card>
     </div>

@@ -184,6 +184,8 @@ a:hover { color: var(--text); text-decoration: underline; text-underline-offset:
 .news-list { margin: 12px 0 0; padding-left: 18px; }
 .news-list li { margin: 6px 0; color: var(--muted); font-size: 13px; }
 .news-list a { color: var(--text); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.check { font-size: 12.5px; font-variant-numeric: tabular-nums; }
 
 /* Filter chips */
 .filters { display: inline-flex; gap: 6px; }
