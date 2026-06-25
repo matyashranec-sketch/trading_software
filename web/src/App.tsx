@@ -29,11 +29,11 @@ function Header({
   return (
     <Card className="header">
       <div className="brand">
-        <h1>News-Driven <span className="mark">Trading Bot</span></h1>
+        <h1>Order-Flow <span className="mark">Trading Bot</span></h1>
         <span className="tag">
-          An AI reads fresh news every ~2 hours and trades only when it is confident.
-          Every trade — winners and losers — stays public, with the reasoning and news
-          that drove it.
+          A deterministic strategy scores a strict order-flow confluence checklist; an LLM
+          confirms each setup before it trades — long or short. Every trade — winners and
+          losers — stays public, with the exact checklist that drove it.
         </span>
       </div>
       <div className="header-right">

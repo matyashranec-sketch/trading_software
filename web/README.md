@@ -21,6 +21,7 @@ npm run dev
 
 ## Views
 - **Dashboard** — equity curve, cash, realized P&L / win rate, open positions.
-- **Trades** — every trade (open + closed) with P&L, the AI's rationale, and the
-  news headlines that drove it. Nothing is hidden.
-- **Signals** — model accuracy (24h / 7d) and the recent signal feed.
+- **Trades** — every trade (open + closed) with P&L, the order-flow confluence
+  checklist and the LLM verdict that drove it. Nothing is hidden.
+- **Signals** — directional hit-rate (24h / 7d, a rough sanity check) and the recent
+  order-flow signal feed.

@@ -3,7 +3,7 @@ import type { Evaluation, Prediction } from "../types";
 import AccuracyBars from "./charts/AccuracyBars";
 import AssetBadge from "./ui/AssetBadge";
 import Card from "./ui/Card";
-import ConfidenceBar from "./ui/ConfidenceBar";
+import ConfluenceBar from "./ui/ConfluenceBar";
 import Pill from "./ui/Pill";
 
 function evalFor(p: Prediction, horizon: string): Evaluation | undefined {
@@ -28,9 +28,11 @@ export default function Leaderboard({ predictions }: { predictions: Prediction[]
   return (
     <div className="stack">
       <Card className="panel">
-        <div className="panel-head"><h2>Signal accuracy — is the strategy any good?</h2></div>
+        <div className="panel-head"><h2>Directional hit-rate — a rough sanity check</h2></div>
         <p className="sub">
-          Every order-flow signal is scored against the real price after 24h and 7d. Pushes (no move) are excluded.
+          Each order-flow signal's direction is scored against the real price after 24h and 7d
+          (pushes excluded). It's only a rough proxy — the real performance is the P&L on the
+          Dashboard and in Trades.
         </p>
         <AccuracyBars predictions={predictions} />
       </Card>
@@ -41,8 +43,8 @@ export default function Leaderboard({ predictions }: { predictions: Prediction[]
           <table className="table">
             <thead>
               <tr>
-                <th>Date</th><th>Asset</th><th>Call</th><th>Confidence</th>
-                <th className="num">24h</th><th className="num">7d</th><th>Model</th>
+                <th>Date</th><th>Asset</th><th>Call</th><th>Confluence</th>
+                <th className="num">24h</th><th className="num">7d</th>
               </tr>
             </thead>
             <tbody>
@@ -53,10 +55,9 @@ export default function Leaderboard({ predictions }: { predictions: Prediction[]
                     <td className="muted">{dateTime(p.created_at)}</td>
                     <td><AssetBadge symbol={p.asset} /></td>
                     <td><Pill kind={p.direction}>{p.direction === "bullish" ? "long" : "short"}</Pill></td>
-                    <td style={{ minWidth: 150 }}><ConfidenceBar value={conf} direction={p.direction} /></td>
+                    <td style={{ minWidth: 150 }}><ConfluenceBar value={conf} direction={p.direction} /></td>
                     <td className="num"><Outcome ev={evalFor(p, "24h")} /></td>
                     <td className="num"><Outcome ev={evalFor(p, "7d")} /></td>
-                    <td className="muted">{p.model}</td>
                   </tr>
                 );
               })}
