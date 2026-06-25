@@ -1,10 +1,11 @@
 # 📈 Order-Flow Strategy Bot
 
 A deterministic trading bot that scores a strict **order-flow confluence checklist**
-every ~30 minutes and places **real trades on the
-[Binance USD-M Futures Testnet](https://testnet.binancefuture.com)** (fake funds, no
-KYC) — long **or** short — *only when enough conditions line up*. Every trade, winner
-or loser, stays public on a dashboard together with the exact checklist that drove it.
+every ~30 minutes, then asks **Gemini to confirm the same setup**, and places **real
+trades on the [Binance USD-M Futures Testnet](https://testnet.binancefuture.com)** (fake
+funds, no KYC) — long **or** short — *only when both agree*. Equity is tracked as a
+virtual **$10k paper account**. Every trade, winner or loser, stays public on a dashboard
+together with the exact checklist — and the model's verdict — that drove it.
 
 > **Transparency is the point.** Nothing is ever deleted or hidden — losing trades are
 > as visible as winners. The credibility of the project depends on not sweeping mistakes
@@ -15,7 +16,7 @@ or loser, stays public on a dashboard together with the exact checklist that dro
 ```
 AWS EC2 · Frankfurt (every ~30m)  ──►  Python bot (app/)            ──►  Binance Futures Testnet
   app.cli run  (sync + trade)         klines + order flow (CVD/delta)        orders, positions, equity
-                                       confluence → risk-sized order
+                                       confluence → Gemini confirm → order
                                               │ writes
                                               ▼
                                        Supabase (Postgres)  ◄── reads ──  React dashboard (Vercel)
@@ -36,7 +37,14 @@ checklist — and **only trades when enough of it passes**:
 7. **Funding** — not crowding the side we're taking (futures).
 
 Stops are placed at structure (beyond the swept level / ATR), targets at an R-multiple,
-and each trade risks a fixed fraction of equity. It shorts as readily as it goes long.
+and each trade risks a fixed fraction of a **virtual $10k paper account**. It shorts as
+readily as it goes long.
+
+**Second gate — LLM confirmation.** When the checklist passes, the bot sends the *same*
+quantitative setup (direction, which checks passed, order-flow features, stop/target) to
+**Gemini** and opens the trade only if the model independently agrees with enough conviction
+(`llm_confirm_min`). If Gemini is unavailable it **fails open** — trading on the order-flow
+signal alone. The model's verdict is stored on the trade alongside the checklist.
 
 ## Validate before trusting it — backtest
 The live decision and the backtest call the **same** confluence code, so you can test it
@@ -48,7 +56,9 @@ Reports land in `data/backtests/`. Only deploy a parameter set whose backtest is
 after fees. (Run it from an EU IP — Binance returns 451 in the US.)
 
 ## Tracked assets
-BTC · ETH · SOL · BNB · XRP (perps vs USDT). Edit `ASSETS` in `app/config.py`.
+BTC · ETH · SOL · BNB · XRP (perps vs USDT). Edit `ASSETS` in `app/config.py`. Only coins
+with a backtested edge are **tradable** (currently **BTC + BNB**); the rest stay tracked for
+the leaderboard (`tradable=False`).
 
 ## Quick start (local, EU IP)
 ```bash
@@ -65,8 +75,9 @@ Keys (free, no credit card, no identity verification):
 - `BINANCE_FUTURES_API_KEY` / `BINANCE_FUTURES_SECRET_KEY` —
   https://testnet.binancefuture.com (log in → API key; pre-funded fake balance).
 - `DATABASE_URL` — Supabase Postgres (Session pooler URI) for production; omit for local SQLite.
-- *(optional)* `GEMINI_API_KEY` / `FINNHUB_API_KEY` — only for the legacy news
-  accuracy leaderboard (`app.cli predict`), not the trading path.
+- *(recommended)* `GEMINI_API_KEY` — powers the **trade-confirmation gate** (without it the
+  bot fails open to order-flow-only) and the optional accuracy leaderboard.
+- *(optional)* `FINNHUB_API_KEY` — only for the news accuracy leaderboard (`app.cli predict`).
 
 ## Deploy (free stack)
 1. **Binance Futures Testnet** — log in at testnet.binancefuture.com, create API keys.
@@ -84,12 +95,15 @@ Keys (free, no credit card, no identity verification):
 | `strategy_htf` / `mtf` / `ltf` | 4h / 1h / 15m | trend / structure / decision timeframes |
 | `min_confluence` | 5 | how many checklist items must pass (raise it = stricter) |
 | `strategy_reward_risk` | 2.0 | take-profit at this R multiple of the stop |
-| `risk_per_trade_pct` | 0.005 | risk ~0.5% of equity per trade |
+| `paper_starting_equity` | 10_000 | virtual paper-account base; equity & sizing start here |
+| `risk_per_trade_pct` | 0.005 | risk ~0.5% of the $10k paper account per trade |
 | `max_position_pct` | 0.10 | per-position notional cap (× leverage) of equity |
 | `max_open_positions` | 5 | concurrent position cap |
 | `cash_buffer_pct` | 0.10 | never deploy this fraction of margin |
 | `futures_leverage` | 3 | low leverage; structure stops sit inside liquidation |
 | `allow_short` | true | take shorts as well as longs |
+| `require_llm_confirmation` | true | Gemini must confirm a setup before trading (else fail open) |
+| `llm_confirm_min` | 60 | min Gemini probability (in the setup's direction) to confirm |
 
 > **Honest note:** microstructure edges are thin and don't always beat fees. The backtest
 > is the gate, and the testnet validates the *process*, not a guaranteed profit. Order-book
@@ -113,8 +127,8 @@ app/
     trader.py    # confluence -> risk-sized long/short orders
     evaluator.py # scores matured signals
   broker/        # binance_futures + binance (spot) + alpaca, behind a Broker interface
-  llm/           # pluggable AI provider (legacy leaderboard only)
-  cli.py         # `trade`, `sync`, `backtest`, `initdb`, `run`, `predict`
+  llm/           # pluggable AI provider (trade-confirmation gate + leaderboard)
+  cli.py         # `trade`, `sync`, `backtest`, `reset`, `initdb`, `run`, `predict`
 web/             # React + Vite dashboard (deployed to Vercel)
 supabase/        # schema.sql (tables + RLS)
 ```

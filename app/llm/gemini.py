@@ -21,7 +21,13 @@ from pydantic import BaseModel
 
 from app.config import Asset, get_settings
 from app.llm.base import LLMProvider, PredictionResult
-from app.llm.prompt import SYSTEM_INSTRUCTION, build_prompt, parse_result
+from app.llm.prompt import (
+    SETUP_SYSTEM_INSTRUCTION,
+    SYSTEM_INSTRUCTION,
+    build_prompt,
+    build_setup_prompt,
+    parse_result,
+)
 from app.sources.news import NewsItem
 
 logger = logging.getLogger(__name__)
@@ -122,18 +128,31 @@ class GeminiProvider(LLMProvider):
     def predict(self, model: str, asset: Asset, news: list[NewsItem]) -> PredictionResult:
         client = self._get_client()
         prompt = build_prompt(asset, news)
-        config = self._build_config()
+        config = self._build_config(SYSTEM_INSTRUCTION, temperature=0.7)
         resp = self._generate_with_retry(client, model, prompt, config)
         return _parse_response(resp)
 
-    def _build_config(self):
+    def judge_setup(self, model: str, asset: Asset, setup: dict) -> PredictionResult:
+        """Confirm or reject a quantitative order-flow setup (the trader's 2nd gate).
+
+        Same structured-output contract as :meth:`predict` (bullish/bearish probs +
+        rationale), but the prompt is the order-flow breakdown, not news, and the
+        temperature is lower for steadier verdicts.
+        """
+        client = self._get_client()
+        prompt = build_setup_prompt(asset, setup)
+        config = self._build_config(SETUP_SYSTEM_INSTRUCTION, temperature=0.3)
+        resp = self._generate_with_retry(client, model, prompt, config)
+        return _parse_response(resp)
+
+    def _build_config(self, system_instruction: str = SYSTEM_INSTRUCTION, temperature: float = 0.7):
         from google.genai import types
 
         return types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
+            system_instruction=system_instruction,
             response_mime_type="application/json",
             response_schema=_GeminiSchema,
-            temperature=0.7,
+            temperature=temperature,
         )
 
     def _generate_with_retry(self, client, model: str, prompt, config):

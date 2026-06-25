@@ -1,14 +1,15 @@
 """Command-line entry point for the trading bot.
 
-Production heartbeat = GitHub Actions cron (every ~2h) running:
-    python -m app.cli sync      # reconcile positions, exits, equity, scoring
-    python -m app.cli trade     # generate signals + place trades
+Production heartbeat = systemd ``run`` on an EU box (sync + trade every ~30 min):
+    python -m app.cli run           # blocking scheduler (sync + trade each cycle)
 
-Local / dev:
+One-off / dev:
     python -m app.cli initdb        # create tables (local SQLite or Supabase)
-    python -m app.cli trade --dry-run
-    python -m app.cli predict       # refresh multi-model accuracy leaderboard
-    python -m app.cli run           # blocking local scheduler (every N hours)
+    python -m app.cli sync          # reconcile positions, exits, equity, scoring
+    python -m app.cli trade --dry-run   # what it WOULD do (order-flow + LLM gate)
+    python -m app.cli reset --yes   # wipe trades/predictions/equity (clean $10k restart)
+    python -m app.cli backtest --asset BTC --days 365
+    python -m app.cli predict       # refresh the optional accuracy leaderboard
 """
 from __future__ import annotations
 
@@ -158,6 +159,19 @@ def cmd_liquidate(args: argparse.Namespace) -> None:
     _print(liquidate(dry_run=args.dry_run))
 
 
+def cmd_reset(args: argparse.Namespace) -> None:
+    """Wipe trade/equity/leaderboard history for a clean $10k restart."""
+    from app.engine.trader import reset_paper_data
+
+    init_db()
+    with session_scope() as session:
+        result = reset_paper_data(session, dry_run=not args.yes)
+    if args.yes:
+        _print({"deleted": result})
+    else:
+        _print({"would_delete": result, "hint": "re-run with --yes to actually wipe"})
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="app.cli", description="News-driven trading bot")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -175,6 +189,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_liq.add_argument(
         "--dry-run", action="store_true",
         help="show what would be sold, but place no orders",
+    )
+    p_reset = sub.add_parser(
+        "reset", help="wipe trades/predictions/equity history (clean $10k restart)")
+    p_reset.add_argument(
+        "--yes", action="store_true",
+        help="actually delete (without this flag, only counts what would be wiped)",
     )
     p_bt = sub.add_parser("backtest", help="backtest the order-flow strategy on history")
     p_bt.add_argument("--asset", help="single asset symbol (default: all tradable)")
@@ -198,6 +218,7 @@ _COMMANDS = {
     "predict": cmd_predict,
     "run": cmd_run,
     "liquidate": cmd_liquidate,
+    "reset": cmd_reset,
     "backtest": cmd_backtest,
     "optimize": cmd_optimize,
 }

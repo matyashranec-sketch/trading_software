@@ -49,7 +49,7 @@ def _provider_with(fake_models, monkeypatch):
     provider = GeminiProvider(api_key="test-key", models=["gemini-2.5-flash"])
     monkeypatch.setattr(provider, "_get_client", lambda: SimpleNamespace(models=fake_models))
     # Don't touch the real google-genai SDK just to build a request config.
-    monkeypatch.setattr(provider, "_build_config", lambda: None)
+    monkeypatch.setattr(provider, "_build_config", lambda *a, **k: None)
     return provider
 
 
@@ -85,3 +85,19 @@ def test_predict_gives_up_after_max_retries(no_sleep, monkeypatch):
         provider.predict("gemini-2.5-flash", ASSETS[0], [])
 
     assert fake.calls == get_settings().gemini_max_retries + 1
+
+
+def test_judge_setup_parses_structured_verdict(no_sleep, monkeypatch):
+    """The order-flow confirmation path shares the retry/parse machinery."""
+    fake = _FakeModels(errors_before_success=0, code=503)
+    provider = _provider_with(fake, monkeypatch)
+
+    setup = {
+        "asset": "BTC", "direction": "long", "mode": "reversal", "confluence": "5/6",
+        "checks": {"trend": True, "sweep": True}, "features": {"structure": "up"},
+        "price": 100.0, "stop": 95.0, "target": 110.0,
+    }
+    result = provider.judge_setup("gemini-2.5-flash", ASSETS[0], setup)
+
+    assert isinstance(result, PredictionResult)
+    assert result.bullish_prob == 70 and fake.calls == 1

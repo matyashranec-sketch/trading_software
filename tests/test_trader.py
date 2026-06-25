@@ -1,5 +1,5 @@
 import app.engine.trader as trader_mod
-from app.broker.base import Account
+from app.broker.base import Account, Position
 from app.config import Asset, Settings
 from app.engine.strategy.confluence import LONG, SHORT, ConfluenceResult
 from app.engine.strategy.engine import StrategySignal
@@ -8,11 +8,15 @@ from app.engine.trader import (
     ACTION_CLOSE,
     ACTION_HOLD,
     ACTION_SHORT,
+    confirm_setup,
     decide,
+    reset_paper_data,
     run_sync,
     run_trading,
     size_by_risk,
+    virtual_account,
 )
+from app.llm.base import PredictionResult
 from app.models import (
     BEARISH,
     BULLISH,
@@ -21,13 +25,45 @@ from app.models import (
     TRADE_CLOSED,
     TRADE_OPEN,
     TRADE_SUBMITTED,
+    Evaluation,
     EquitySnapshot,
     Prediction,
     Trade,
+    utcnow,
 )
 from tests.conftest import FakeBroker, long_position, short_position
 
 BTC = Asset("BTC", "Bitcoin", "crypto", coingecko_id="bitcoin", binance_symbol="BTCUSDT")
+
+
+def _approve(asset, sig):
+    """Confirmer stub that endorses the setup in its own direction."""
+    if sig.is_long:
+        v = PredictionResult(bullish_prob=80.0, bearish_prob=20.0, rationale="confirmed")
+    else:
+        v = PredictionResult(bullish_prob=20.0, bearish_prob=80.0, rationale="confirmed")
+    return True, v
+
+
+def _reject(asset, sig):
+    return False, PredictionResult(bullish_prob=45.0, bearish_prob=55.0, rationale="too weak")
+
+
+class _FakeProvider:
+    """Minimal LLM provider for confirm_setup() tests (no network)."""
+
+    def __init__(self, models=("m",), verdict=None, raise_exc=False):
+        self._models = list(models)
+        self._verdict = verdict
+        self._raise = raise_exc
+
+    def available_models(self):
+        return list(self._models)
+
+    def judge_setup(self, model, asset, setup):
+        if self._raise:
+            raise RuntimeError("boom")
+        return self._verdict
 
 
 def make_signal(direction=LONG, *, passed=True, price=100.0, stop=None, target=None,
@@ -128,7 +164,7 @@ def test_run_trading_opens_long(db):
     broker = FakeBroker(equity=10_000, cash=10_000)
     sig = make_signal(LONG, price=100, stop=95, target=110, db=db)
 
-    summary = run_trading(db, broker=broker, signals=[sig])
+    summary = run_trading(db, broker=broker, signals=[sig], confirmer=_approve)
 
     assert broker.submitted == [("BTC", "buy", 1_000.0, None)]
     t = db.query(Trade).one()
@@ -144,7 +180,7 @@ def test_run_trading_opens_short(db):
     broker = FakeBroker(equity=10_000, cash=10_000)
     sig = make_signal(SHORT, price=100, stop=105, target=90, db=db)
 
-    run_trading(db, broker=broker, signals=[sig])
+    run_trading(db, broker=broker, signals=[sig], confirmer=_approve)
 
     assert broker.submitted == [("BTC", "sell", 1_000.0, None)]
     t = db.query(Trade).one()
@@ -174,7 +210,8 @@ def test_run_trading_closes_long_on_short_signal(db):
 
 def test_run_trading_dry_run_places_nothing(db):
     broker = FakeBroker()
-    summary = run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)], dry_run=True)
+    summary = run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)],
+                          dry_run=True, confirmer=_approve)
 
     assert broker.submitted == [] and db.query(Trade).count() == 0
     assert db.query(EquitySnapshot).count() == 0
@@ -256,3 +293,113 @@ def test_run_sync_triggers_take_profit_on_short(db, monkeypatch):
     t = db.query(Trade).one()
     assert t.close_reason == "take_profit" and t.pnl == 100.0  # (100-90)*10 short
     assert summary["closed"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# virtual_account() — equity tracked as a clean $10k paper book
+# --------------------------------------------------------------------------- #
+def test_virtual_account_flat_is_starting_equity(db):
+    acct = virtual_account(db, [], Settings(paper_starting_equity=10_000, futures_leverage=3))
+    assert acct.equity == 10_000.0 and acct.cash == 10_000.0
+
+
+def test_virtual_account_counts_realized_and_unrealized(db):
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_CLOSED, pnl=250.0))
+    db.add(Trade(asset="BTC", side=SIDE_SELL, status=TRADE_CLOSED, pnl=-50.0))
+    db.commit()
+    pos = Position(symbol="ETH", qty=1.0, side=LONG, avg_entry_price=2_000.0,
+                   market_value=2_000.0, unrealized_pl=100.0)
+    acct = virtual_account(db, [pos], Settings(paper_starting_equity=10_000, futures_leverage=2))
+    # wallet = 10000 + (250 - 50) = 10200; equity = 10200 + 100 = 10300
+    # used_margin = 2000 / 2 = 1000; cash = 10200 - 1000 = 9200
+    assert acct.equity == 10_300.0
+    assert acct.cash == 9_200.0
+
+
+def test_run_trading_records_virtual_equity_not_broker_balance(db):
+    broker = FakeBroker(equity=500_000, cash=500_000)  # testnet's inflated fake balance
+    run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)], confirmer=_approve)
+    snap = db.query(EquitySnapshot).one()
+    assert snap.equity == 10_000.0  # virtual $10k base, not the broker's 500k
+
+
+# --------------------------------------------------------------------------- #
+# LLM confirmation gate (second gate over the order-flow signal)
+# --------------------------------------------------------------------------- #
+def test_run_trading_holds_when_llm_rejects(db):
+    broker = FakeBroker(equity=10_000, cash=10_000)
+    summary = run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)], confirmer=_reject)
+
+    assert broker.submitted == [] and db.query(Trade).count() == 0
+    assert summary["actions"][0]["action"] == ACTION_HOLD
+    assert "LLM" in summary["actions"][0]["reason"]
+
+
+def test_run_trading_records_llm_rationale_on_trade(db):
+    broker = FakeBroker(equity=10_000, cash=10_000)
+    run_trading(db, broker=broker, signals=[make_signal(LONG, db=db)], confirmer=_approve)
+
+    t = db.query(Trade).one()
+    assert "LLM" in t.rationale and "confirmed" in t.rationale
+
+
+def test_confirm_setup_disabled_is_fail_open(db):
+    ok, verdict = confirm_setup(BTC, make_signal(LONG),
+                                settings=Settings(require_llm_confirmation=False))
+    assert ok is True and verdict is None
+
+
+def test_confirm_setup_approves_above_threshold():
+    prov = _FakeProvider(verdict=PredictionResult(bullish_prob=70, bearish_prob=30, rationale="ok"))
+    ok, verdict = confirm_setup(BTC, make_signal(LONG), provider=prov,
+                                settings=Settings(llm_confirm_min=60))
+    assert ok is True and verdict.bullish_prob == 70
+
+
+def test_confirm_setup_rejects_below_threshold():
+    prov = _FakeProvider(verdict=PredictionResult(bullish_prob=55, bearish_prob=45, rationale="meh"))
+    ok, _ = confirm_setup(BTC, make_signal(LONG), provider=prov,
+                          settings=Settings(llm_confirm_min=60))
+    assert ok is False
+
+
+def test_confirm_setup_fail_open_without_models():
+    ok, verdict = confirm_setup(BTC, make_signal(LONG), provider=_FakeProvider(models=()),
+                                settings=Settings())
+    assert ok is True and verdict is None
+
+
+def test_confirm_setup_fail_open_on_error():
+    ok, verdict = confirm_setup(BTC, make_signal(LONG), provider=_FakeProvider(raise_exc=True),
+                                settings=Settings())
+    assert ok is True and verdict is None
+
+
+# --------------------------------------------------------------------------- #
+# reset_paper_data() — clean slate
+# --------------------------------------------------------------------------- #
+def test_reset_paper_data_wipes_everything(db):
+    pred = Prediction(asset="BTC", model="orderflow-v1", direction=BULLISH,
+                      bullish_prob=80, bearish_prob=20, price_at_prediction=100.0)
+    db.add(pred)
+    db.flush()
+    db.add(Evaluation(prediction_id=pred.id, horizon="24h",
+                      target_eval_time=utcnow(), status="pending"))
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_CLOSED, pnl=10.0))
+    db.add(EquitySnapshot(equity=10_000, cash=10_000, buying_power=10_000))
+    db.commit()
+
+    counts = reset_paper_data(db)
+
+    assert counts == {"evaluations": 1, "trades": 1, "predictions": 1, "equity_snapshots": 1}
+    assert db.query(Trade).count() == 0 and db.query(Prediction).count() == 0
+    assert db.query(Evaluation).count() == 0 and db.query(EquitySnapshot).count() == 0
+
+
+def test_reset_paper_data_dry_run_keeps_rows(db):
+    db.add(Trade(asset="BTC", side=SIDE_BUY, status=TRADE_CLOSED, pnl=10.0))
+    db.commit()
+
+    counts = reset_paper_data(db, dry_run=True)
+
+    assert counts["trades"] == 1 and db.query(Trade).count() == 1
