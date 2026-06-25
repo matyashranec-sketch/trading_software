@@ -39,6 +39,45 @@ def build_prompt(asset: Asset, news: list[NewsItem]) -> str:
     )
 
 
+SETUP_SYSTEM_INSTRUCTION = (
+    "You are a disciplined crypto-futures trader reviewing a quantitative order-flow "
+    "setup proposed by a deterministic strategy. Judge ONLY whether the setup is worth "
+    "taking as described: weigh how many confluence checks passed, the trend/structure, "
+    "order flow (CVD slope, taker delta), location versus value, funding and the "
+    "reward:risk. Do not invent data beyond what is provided. Be calibrated and "
+    "skeptical — reject weak or contradictory setups. Respond with strict JSON only."
+)
+
+
+def build_setup_prompt(asset: Asset, setup: dict) -> str:
+    """Describe an order-flow setup (the ``ConfluenceResult`` breakdown) for the LLM."""
+    direction = str(setup.get("direction", "")).upper()
+    checks = setup.get("checks", {}) or {}
+    checks_str = ", ".join(f"{'PASS' if v else 'FAIL'} {k}" for k, v in checks.items()) or "(none)"
+    feats = setup.get("features", {}) or {}
+    feat_keys = (
+        "structure", "atr_pct", "vwap", "poc", "value_low", "value_high",
+        "cvd", "cvd_slope", "delta_strength", "funding", "book_imbalance",
+    )
+    feats_str = ", ".join(
+        f"{k}={feats[k]}" for k in feat_keys if feats.get(k) is not None
+    ) or "(none)"
+    return (
+        f"Asset: {asset.name} ({asset.symbol}).\n"
+        f"Proposed trade: {direction} ({setup.get('mode')} setup).\n"
+        f"Confluence: {setup.get('confluence')} checks passed.\n"
+        f"Checklist: {checks_str}.\n"
+        f"Order flow / context: {feats_str}.\n"
+        f"Entry: {setup.get('price')}  Stop: {setup.get('stop')}  Target: {setup.get('target')}.\n\n"
+        "Judge whether THIS setup should be traded as proposed and return JSON with:\n"
+        "- bullish_prob: number 0-100 (probability price goes up from here)\n"
+        "- bearish_prob: number 0-100 (probability price goes down from here)\n"
+        "- rationale: 1-2 sentence verdict naming the strongest / weakest factors.\n"
+        "bullish_prob + bearish_prob must sum to 100. Endorse a LONG with a high "
+        "bullish_prob, a SHORT with a high bearish_prob; stay near 50/50 if unconvinced."
+    )
+
+
 def parse_result(data: dict) -> PredictionResult:
     """Coerce a raw JSON dict into a normalized PredictionResult."""
     bullish = _to_float(data.get("bullish_prob"))

@@ -111,6 +111,14 @@ class Settings(BaseSettings):
     llm_min_interval_seconds: float = 6.0   # min spacing between model calls (RPM guard)
     gemini_models_cache_ttl: int = 21_600   # cache models.list() for 6 h (long-running run)
 
+    # --- LLM confirmation gate (second gate over the order-flow strategy) ---
+    # After the deterministic order-flow confluence proposes a trade, Gemini judges
+    # the same setup; the trade opens only if BOTH agree. If Gemini is unavailable
+    # (no key, or transient errors after retries) we fail OPEN — i.e. trade on the
+    # order-flow signal alone. See app.engine.trader.confirm_setup.
+    require_llm_confirmation: bool = True
+    llm_confirm_min: float = 60.0       # Gemini prob (in the setup's direction) must be >= this
+
     # --- Storage ---
     # Local default = SQLite. In production set DATABASE_URL to the Supabase
     # Postgres connection string (postgresql://...).
@@ -141,6 +149,12 @@ class Settings(BaseSettings):
     max_hold_bars: int = 96              # force-exit a position after this many LTF bars
 
     # --- Position sizing / risk ---
+    # Virtual paper-account base: equity, cash and sizing are tracked as if the bot
+    # started with exactly this much, regardless of the testnet's (large, arbitrary)
+    # fake balance — so the equity curve / "% since start" begin cleanly at $10k and
+    # positions are sized for a $10k book. Real testnet funds only need to cover the
+    # resulting (smaller) orders. See app.engine.trader.virtual_account.
+    paper_starting_equity: float = 10_000.0
     risk_per_trade_pct: float = 0.005   # risk this fraction of equity per trade (~0.5%)
     max_position_pct: float = 0.10      # per-position notional cap (× leverage) of equity
     max_open_positions: int = 5         # cap concurrent open positions
