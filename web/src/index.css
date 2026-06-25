@@ -146,7 +146,7 @@ a:hover { color: var(--text); text-decoration: underline; text-underline-offset:
   font-size: 11px; font-weight: 600; color: #15151a;
 }
 
-/* Confidence bar */
+/* Confluence bar */
 .confbar { display: flex; align-items: center; gap: 10px; min-width: 120px; }
 .confbar .track { flex: 1; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
 .confbar .fill { height: 100%; border-radius: 999px; transition: width .3s ease; }
@@ -181,9 +181,6 @@ a:hover { color: var(--text); text-decoration: underline; text-underline-offset:
   padding: 16px; margin: 2px 4px 10px; animation: fade-in .16s ease both;
 }
 .rationale { line-height: 1.6; font-size: 13.5px; }
-.news-list { margin: 12px 0 0; padding-left: 18px; }
-.news-list li { margin: 6px 0; color: var(--muted); font-size: 13px; }
-.news-list a { color: var(--text); }
 .checks { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
 .check { font-size: 12.5px; font-variant-numeric: tabular-nums; }
 

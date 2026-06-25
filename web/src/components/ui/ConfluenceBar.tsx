@@ -1,4 +1,4 @@
-export default function ConfidenceBar({
+export default function ConfluenceBar({
   value,
   direction = "bullish",
 }: {

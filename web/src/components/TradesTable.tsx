@@ -85,7 +85,7 @@ export default function TradesTable({ trades }: { trades: Trade[] }) {
                   {expanded && (
                     <div className="expand-inner">
                       <div className="rationale">
-                        <strong>Why{t.model ? ` (${t.model})` : ""}:</strong> {t.rationale || "—"}
+                        <strong>Why:</strong> {t.rationale || "—"}
                       </div>
                       {conf && (
                         <>
