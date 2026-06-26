@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { compactMoney, dateTime, money } from "../../lib/format";
+import { dateTime, money } from "../../lib/format";
 import type { EquitySnapshot } from "../../types";
 
 type Range = "24h" | "7d" | "all";
@@ -87,9 +87,9 @@ export default function EquityChart({ equity }: { equity: EquitySnapshot[] }) {
             <YAxis
               stroke="#6a6a73"
               fontSize={11}
-              width={56}
+              width={66}
               domain={["auto", "auto"]}
-              tickFormatter={(v) => compactMoney(Number(v))}
+              tickFormatter={(v) => money(Number(v), 0)}
               tickLine={false}
               axisLine={false}
             />
